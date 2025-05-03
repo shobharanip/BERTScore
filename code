@@ -1,0 +1,46 @@
+from Translation_evaluator_Research import TranslationEvaluator
+
+def main():
+    te = TranslationEvaluator(output_file="output_data.xlsx")
+
+    # 1) load exactly the right sheet
+    te.load_data("input_data.xlsx")  
+    # If your sheet isn’t the first one, change the loader inside the class as above.
+
+    # debug print—make sure you really have the six columns you expect:
+    print("Loaded columns:", te._data.columns.tolist())
+
+    models = [
+        "base_madlad400_translation",
+        "finetuned_madlad400_translation",
+        "finetuned_helsinki_translation",
+        "base_helsinki_translation"
+    ]
+    keep = ["es"]
+    metrics = ["BLEU", "ChrF", "ChrF++"]
+
+    # Run 1: measure timing
+    te.evaluate(
+        prediction_cols=models,
+        reference_col="en",
+        metrics=metrics,
+        keep_cols=keep,
+        run_id=1,
+        measure_time=True,
+    )
+
+    # Run 2: no timing
+    te.evaluate(
+        prediction_cols=models,
+        reference_col="en",
+        metrics=metrics,
+        keep_cols=keep,
+        run_id=2,
+        measure_time=False,
+    )
+
+    # write everything out
+    te.save_excel()
+
+if __name__ == "__main__":
+    main()
