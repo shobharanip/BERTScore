@@ -8,27 +8,34 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 import pandas as pd
+import torch
 import evaluate
 
 # ──────────────────────────────────────────────────────────────────────────────
 # CONFIGURATION
-# Path to your locally-saved roberta-large checkpoint
+
+# Path to your locally‐saved roberta‐large checkpoint
 MODEL_PATH = os.getenv(
-    "BERT",
+    "BERT", 
     "/appdata/cortex/dev4/shared/libs/huggingface/roberta-large"
 )
 
-# Use GPU if CUDA_VISIBLE_DEVICES is set, else CPU
-DEVICE = "cuda" if os.getenv("CUDA_VISIBLE_DEVICES") else "cpu"
+# Evaluate wants a device *index*: 0 for cuda:0, -1 for CPU
+EVAL_DEVICE = 0 if torch.cuda.is_available() else -1
 
-# Load the 🤗 Evaluate BERTScore metric (no `from bert_score import …`)
-bertscore = evaluate.load("bertscore")
+# Pre‐load the bertscore metric pointing at your local checkpoint
+bertscore = evaluate.load(
+    "bertscore",
+    model_type=MODEL_PATH,
+    device=EVAL_DEVICE
+)
 
 # ──────────────────────────────────────────────────────────────────────────────
 # FASTAPI SETUP
+
 app = FastAPI(
-    title="RoBERTa-Large BERTScore API",
-    description="Compute BERTScore with your local RoBERTa-large checkpoint",
+    title="RoBERTa‑Large BERTScore API",
+    description="Compute BERTScore with your local RoBERTa‑large checkpoint",
     version="1.0.0"
 )
 
@@ -55,15 +62,14 @@ async def calculate_score(request: ScoreRequest):
     if len(request.reference) != len(request.candidate):
         raise HTTPException(
             status_code=400,
-            detail="`reference` and `candidate` must be the same length"
+            detail="`reference` and `candidate` lists must be the same length"
         )
 
     try:
+        # only pass predictions & references here
         results = bertscore.compute(
             predictions=request.candidate,
-            references = request.reference,
-            model_type = MODEL_PATH,
-            device     = DEVICE
+            references =request.reference
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"scoring error: {e}")
@@ -89,26 +95,24 @@ async def batch_local():
 
 @app.post("/batch-bertscore/")
 async def batch_bertscore(file: UploadFile = File(...)):
-    # 1) Read the uploaded Excel file
+    # 1) read the uploaded Excel
     try:
         df = pd.read_excel(file.file)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"cannot read Excel: {e}")
 
-    # 2) Validate required columns
+    # 2) validate columns
     if "reference" not in df.columns or "candidate" not in df.columns:
         raise HTTPException(
             status_code=400,
             detail="Excel must have 'reference' and 'candidate' columns"
         )
 
-    # 3) Compute BERTScore in batch
+    # 3) score in batch
     try:
         results = bertscore.compute(
             predictions=df["candidate"].astype(str).tolist(),
-            references = df["reference"].astype(str).tolist(),
-            model_type = MODEL_PATH,
-            device     = DEVICE
+            references =df["reference"].astype(str).tolist()
         )
         df["precision"] = results["precision"]
         df["recall"]    = results["recall"]
@@ -116,7 +120,7 @@ async def batch_bertscore(file: UploadFile = File(...)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"scoring error: {e}")
 
-    # 4) Write results to a temporary Excel and return
+    # 4) write out
     tmp = tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False)
     out = tmp.name
     tmp.close()
