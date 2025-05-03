@@ -1,46 +1,137 @@
-from Translation_evaluator_Research import TranslationEvaluator
+# batch_bertscore.py
 
-def main():
-    te = TranslationEvaluator(output_file="output_data.xlsx")
+import os
+import tempfile
 
-    # 1) load exactly the right sheet
-    te.load_data("input_data.xlsx")  
-    # If your sheet isn’t the first one, change the loader inside the class as above.
+from fastapi import FastAPI, HTTPException, UploadFile, File
+from fastapi.responses import FileResponse
+from pydantic import BaseModel
 
-    # debug print—make sure you really have the six columns you expect:
-    print("Loaded columns:", te._data.columns.tolist())
+import pandas as pd
+import evaluate
 
-    models = [
-        "base_madlad400_translation",
-        "finetuned_madlad400_translation",
-        "finetuned_helsinki_translation",
-        "base_helsinki_translation"
-    ]
-    keep = ["es"]
-    metrics = ["BLEU", "ChrF", "ChrF++"]
+# ──────────────────────────────────────────────────────────────────────────────
+# CONFIGURATION
+# Path to your locally-saved roberta-large checkpoint
+MODEL_PATH = os.getenv(
+    "BERT",
+    "/appdata/cortex/dev4/shared/libs/huggingface/roberta-large"
+)
 
-    # Run 1: measure timing
-    te.evaluate(
-        prediction_cols=models,
-        reference_col="en",
-        metrics=metrics,
-        keep_cols=keep,
-        run_id=1,
-        measure_time=True,
+# Use GPU if CUDA_VISIBLE_DEVICES is set, else CPU
+DEVICE = "cuda" if os.getenv("CUDA_VISIBLE_DEVICES") else "cpu"
+
+# Load the 🤗 Evaluate BERTScore metric (no `from bert_score import …`)
+bertscore = evaluate.load("bertscore")
+
+# ──────────────────────────────────────────────────────────────────────────────
+# FASTAPI SETUP
+app = FastAPI(
+    title="RoBERTa-Large BERTScore API",
+    description="Compute BERTScore with your local RoBERTa-large checkpoint",
+    version="1.0.0"
+)
+
+class ScoreRequest(BaseModel):
+    reference: list[str]
+    candidate: list[str]
+
+class ScoreResponse(BaseModel):
+    precision: list[float]
+    recall:    list[float]
+    f1:        list[float]
+    model_type: str
+    version:    str
+
+@app.get("/")
+async def health_check():
+    return {
+        "status": "healthy",
+        "model":  f"roberta-large @ {MODEL_PATH}"
+    }
+
+@app.post("/bertscore/", response_model=ScoreResponse)
+async def calculate_score(request: ScoreRequest):
+    if len(request.reference) != len(request.candidate):
+        raise HTTPException(
+            status_code=400,
+            detail="`reference` and `candidate` must be the same length"
+        )
+
+    try:
+        results = bertscore.compute(
+            predictions=request.candidate,
+            references = request.reference,
+            model_type = MODEL_PATH,
+            device     = DEVICE
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"scoring error: {e}")
+
+    return ScoreResponse(
+        precision=results["precision"],
+        recall=   results["recall"],
+        f1=       results["f1"],
+        model_type="roberta-large",
+        version="1.0"
     )
 
-    # Run 2: no timing
-    te.evaluate(
-        prediction_cols=models,
-        reference_col="en",
-        metrics=metrics,
-        keep_cols=keep,
-        run_id=2,
-        measure_time=False,
+@app.get("/batch-local/")
+async def batch_local():
+    inp = "/appdata/cortex/dev4/shobha/input_data.xlsx"
+    if not os.path.exists(inp):
+        raise HTTPException(status_code=404, detail=f"input not found: {inp}")
+    return FileResponse(
+        path=inp,
+        filename=os.path.basename(inp),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
 
-    # write everything out
-    te.save_excel()
+@app.post("/batch-bertscore/")
+async def batch_bertscore(file: UploadFile = File(...)):
+    # 1) Read the uploaded Excel file
+    try:
+        df = pd.read_excel(file.file)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"cannot read Excel: {e}")
+
+    # 2) Validate required columns
+    if "reference" not in df.columns or "candidate" not in df.columns:
+        raise HTTPException(
+            status_code=400,
+            detail="Excel must have 'reference' and 'candidate' columns"
+        )
+
+    # 3) Compute BERTScore in batch
+    try:
+        results = bertscore.compute(
+            predictions=df["candidate"].astype(str).tolist(),
+            references = df["reference"].astype(str).tolist(),
+            model_type = MODEL_PATH,
+            device     = DEVICE
+        )
+        df["precision"] = results["precision"]
+        df["recall"]    = results["recall"]
+        df["f1"]        = results["f1"]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"scoring error: {e}")
+
+    # 4) Write results to a temporary Excel and return
+    tmp = tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False)
+    out = tmp.name
+    tmp.close()
+
+    try:
+        df.to_excel(out, index=False)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"cannot write Excel: {e}")
+
+    return FileResponse(
+        path=out,
+        filename="roberta_results.xlsx",
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
 
 if __name__ == "__main__":
-    main()
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)
