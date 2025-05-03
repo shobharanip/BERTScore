@@ -14,29 +14,31 @@ import evaluate
 # ──────────────────────────────────────────────────────────────────────────────
 # CONFIGURATION
 
-# Path to your locally‐saved roberta‐large checkpoint
+# 1) Where your locally‐saved roberta-large lives
 MODEL_PATH = os.getenv(
-    "BERT", 
+    "BERT",
     "/appdata/cortex/dev4/shared/libs/huggingface/roberta-large"
 )
 
-# Evaluate wants a device *index*: 0 for cuda:0, -1 for CPU
+# 2) Evaluate expects device index: 0 for cuda:0, -1 for CPU
 EVAL_DEVICE = 0 if torch.cuda.is_available() else -1
 
-# Pre‐load the bertscore metric pointing at your local checkpoint
+# 3) PRELOAD the BERTScore metric with both model_type & lang
+#    so compute() only needs predictions + references
 bertscore = evaluate.load(
     "bertscore",
-    model_type=MODEL_PATH,
-    device=EVAL_DEVICE
+    model_type = MODEL_PATH,
+    lang       = "en",
+    device     = EVAL_DEVICE
 )
 
 # ──────────────────────────────────────────────────────────────────────────────
 # FASTAPI SETUP
 
 app = FastAPI(
-    title="RoBERTa‑Large BERTScore API",
-    description="Compute BERTScore with your local RoBERTa‑large checkpoint",
-    version="1.0.0"
+    title       = "RoBERTa‑Large BERTScore API",
+    description = "Compute BERTScore with your local RoBERTa‑large checkpoint",
+    version     = "1.0.0"
 )
 
 class ScoreRequest(BaseModel):
@@ -66,20 +68,19 @@ async def calculate_score(request: ScoreRequest):
         )
 
     try:
-        # only pass predictions & references here
         results = bertscore.compute(
             predictions=request.candidate,
-            references =request.reference
+            references = request.reference
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"scoring error: {e}")
 
     return ScoreResponse(
-        precision=results["precision"],
-        recall=   results["recall"],
-        f1=       results["f1"],
+        precision = results["precision"],
+        recall    = results["recall"],
+        f1        = results["f1"],
         model_type="roberta-large",
-        version="1.0"
+        version   ="1.0"
     )
 
 @app.get("/batch-local/")
@@ -88,27 +89,27 @@ async def batch_local():
     if not os.path.exists(inp):
         raise HTTPException(status_code=404, detail=f"input not found: {inp}")
     return FileResponse(
-        path=inp,
-        filename=os.path.basename(inp),
-        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        path      = inp,
+        filename  = os.path.basename(inp),
+        media_type= "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
 
 @app.post("/batch-bertscore/")
 async def batch_bertscore(file: UploadFile = File(...)):
-    # 1) read the uploaded Excel
+    # 1) Read Excel
     try:
         df = pd.read_excel(file.file)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"cannot read Excel: {e}")
 
-    # 2) validate columns
+    # 2) Validate columns
     if "reference" not in df.columns or "candidate" not in df.columns:
         raise HTTPException(
             status_code=400,
             detail="Excel must have 'reference' and 'candidate' columns"
         )
 
-    # 3) score in batch
+    # 3) Compute BERTScore
     try:
         results = bertscore.compute(
             predictions=df["candidate"].astype(str).tolist(),
@@ -120,7 +121,7 @@ async def batch_bertscore(file: UploadFile = File(...)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"scoring error: {e}")
 
-    # 4) write out
+    # 4) Write out to a temp Excel
     tmp = tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False)
     out = tmp.name
     tmp.close()
@@ -131,9 +132,9 @@ async def batch_bertscore(file: UploadFile = File(...)):
         raise HTTPException(status_code=500, detail=f"cannot write Excel: {e}")
 
     return FileResponse(
-        path=out,
-        filename="roberta_results.xlsx",
-        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        path      = out,
+        filename  = "roberta_results.xlsx",
+        media_type= "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
 
 if __name__ == "__main__":
