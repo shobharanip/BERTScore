@@ -1,53 +1,44 @@
-# -*- coding: utf-8 -*-
-"""
-Driver script for TranslationEvaluator.
-Adjust INPUT_FILE and OUTPUT_FILE paths below.
-"""
+from translation_evaluator import (
+    TranslationEvaluator,
+    INPUT_PATH,     # default input_data.xlsx
+    OUTPUT_PATH     # default output_data.xlsx
+)
 
-from Translation_evaluator_Research import TranslationEvaluator
+# 1) Instantiate, pointing at your desired output file:
+te = TranslationEvaluator(output_file="my_results.xlsx")
 
-def main():
-    # ────────────────────────────────────────────────────────────────
-    INPUT_FILE  = r"C:/Users/YourName/Documents/2. Spanish model/input_data.xlsx"
-    OUTPUT_FILE = r"C:/Users/YourName/Documents/2. Spanish model/output_data.xlsx"
-    # ────────────────────────────────────────────────────────────────
+# 2) Load your data:
+te.load_data("my_input.xlsx")
 
-    te = TranslationEvaluator(output_file=OUTPUT_FILE)
-    te.load_data(INPUT_FILE)
-    print("Loaded columns:", te._data.columns.tolist())
+# 3) Run #1 (with per‐sentence timing):
+te.evaluate(
+    prediction_cols=[
+        "base_madlad400_translation",
+        "finetuned_madlad400_translation",
+        "finetuned_helsinki_translation",
+        "base_helsinki_translation",
+    ],
+    reference_col="en",
+    metrics=["BLEU", "ChrF", "ChrF++"],
+    keep_cols=["es"],
+    run_id=1,
+    measure_time=True
+)
 
-    MODELS  = [
-      "base_madlad400_translation",
-      "finetuned_madlad400_translation",
-      "finetuned_helsinki_translation",
-      "base_helsinki_translation",
-    ]
-    KEEP    = ["es"]
-    METRICS = ["BLEU", "ChrF", "ChrF++"]
+# 4) Run #2 (no timing):
+te.evaluate(
+    prediction_cols=[
+        "base_madlad400_translation",
+        "finetuned_madlad400_translation",
+        "finetuned_helsinki_translation",
+        "base_helsinki_translation",
+    ],
+    reference_col="en",
+    metrics=["BLEU", "ChrF", "ChrF++"],
+    keep_cols=["es"],
+    run_id=2,
+    measure_time=False
+)
 
-    # Run #1: with per-sentence timing
-    te.evaluate(
-      prediction_cols = MODELS,
-      reference_col   = "en",
-      metrics         = METRICS,
-      keep_cols       = KEEP,
-      run_id          = 1,
-      measure_time    = True,
-    )
-
-    # Run #2: no timing
-    te.evaluate(
-      prediction_cols = MODELS,
-      reference_col   = "en",
-      metrics         = METRICS,
-      keep_cols       = KEEP,
-      run_id          = 2,
-      measure_time    = False,
-    )
-
-    # write out all three sheets
-    te.save_excel()
-    print(f"✅ Written results to {OUTPUT_FILE}")
-
-if __name__ == "__main__":
-    main()
+# 5) Write out all three sheets at once:
+te.save_excel()     # writes “my_results.xlsx” with Detailed / Summary / Timings
