@@ -1,0 +1,43 @@
+from translation_evaluator import TranslationEvaluator
+
+def main():
+    INPUT_XLSX  = "input_data.xlsx"   # your data with cols: en, es, 4 model cols
+    OUTPUT_XLSX = "output_data.xlsx"
+
+    te = TranslationEvaluator(output_file=OUTPUT_XLSX)
+    te.load_data(INPUT_XLSX)
+
+    MODELS = [
+        "base_madlad400_translation",
+        "finetuned_madlad400_translation",
+        "finetuned_helsinki_translation",
+        "base_helsinki_translation",
+    ]
+    KEEP   = ["es"]
+    METRICS = ["BLEU","ChrF","ChrF++"]
+
+    # Run 1: with per‐sentence timing
+    te.evaluate(
+        prediction_cols=MODELS,
+        reference_col="en",
+        metrics=METRICS,
+        keep_cols=KEEP,
+        run_id=1,
+        measure_time=True,
+    )
+
+    # Run 2: without timing
+    te.evaluate(
+        prediction_cols=MODELS,
+        reference_col="en",
+        metrics=METRICS,
+        keep_cols=KEEP,
+        run_id=2,
+        measure_time=False,
+    )
+
+    # Save all three sheets
+    te.save_excel()
+
+if __name__ == "__main__":
+    main()
