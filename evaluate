@@ -110,20 +110,27 @@ class TranslationEvaluator:
             avg = det.groupby(["model", "run"], as_index=False)[
                 "response_time"
             ].mean()
-            self._timings = pd.concat([self._timings, avg], ignore_index=True)
+            self._timings = pd.concat([self._timings, avg], ignore_index=True
+
+
+
 
     def save_excel(self) -> None:
         if self._detailed.empty:
-            raise RuntimeError("No detailed data to write. Call .evaluate() first.")
+            raise RuntimeError("No data – call .evaluate() first.")
 
         with pd.ExcelWriter(self.output_file, engine="openpyxl") as w:
             # ─── DETAILED ────────────────────────────────────────────────────
             det = self._detailed
+
+            # keep everything _except_ the metric columns as our index
             idx_cols = [c for c in det.columns if c not in ("BLEU","ChrF","ChrF++","response_time")]
+            # metric columns are whatever's left
             val_cols = [c for c in det.columns if c not in idx_cols]
+
             det_pivot = det.pivot_table(
                 index=idx_cols,
-                columns=["model","run"],
+                columns=["run","model"],      # <-- swap run/model here
                 values=val_cols,
                 aggfunc="first",
             )
@@ -131,13 +138,26 @@ class TranslationEvaluator:
 
             # ─── SUMMARY ─────────────────────────────────────────────────────
             sm = self._summary
-            sum_piv = sm.pivot(
-                index="model",
-                columns="run",
-                values=[c for c in sm.columns if c not in ("model","run")],
+            # first melt into long form
+            long = (
+                sm
+                .melt(id_vars=["model","run"], var_name="metric", value_name="score")
             )
-            sum_piv.to_excel(w, sheet_name="Summary")
+            # then pivot so metrics down the left, runs & models across the top
+            sum_pivot = long.pivot(
+                index="metric",
+                columns=["run","model"],
+                values="score",
+            )
+            sum_pivot.to_excel(w, sheet_name="Summary")
 
             # ─── TIMINGS ────────────────────────────────────────────────────
             if not self._timings.empty:
-                self._timings.to_excel(w, sheet_name="Timings", index=False)
+                tm = self._timings
+                # pivot so each run is its own column
+                tim_pivot = tm.pivot(
+                    index="model",
+                    columns="run",
+                    values="response_time"
+                )
+                tim_pivot.to_excel(w, sheet_name="Timings")
