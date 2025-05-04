@@ -1,44 +1,47 @@
-from translation_evaluator import (
-    TranslationEvaluator,
-    INPUT_PATH,     # default input_data.xlsx
-    OUTPUT_PATH     # default output_data.xlsx
-)
+# run_evaluation.py
 
-# 1) Instantiate, pointing at your desired output file:
-te = TranslationEvaluator(output_file="my_results.xlsx")
+from translation_evaluator import TranslationEvaluator
 
-# 2) Load your data:
-te.load_data("my_input.xlsx")
+def main():
+    # 1) Instantiate, pointing at your desired output workbook
+    te = TranslationEvaluator(output_file="output_data.xlsx")
 
-# 3) Run #1 (with per‐sentence timing):
-te.evaluate(
-    prediction_cols=[
-        "base_madlad400_translation",
-        "finetuned_madlad400_translation",
-        "finetuned_helsinki_translation",
-        "base_helsinki_translation",
-    ],
-    reference_col="en",
-    metrics=["BLEU", "ChrF", "ChrF++"],
-    keep_cols=["es"],
-    run_id=1,
-    measure_time=True
-)
+    # 2) Load your input (Excel or CSV) with cols: en, es, and your model‐prediction cols
+    te.load_data("input_data.xlsx")
 
-# 4) Run #2 (no timing):
-te.evaluate(
-    prediction_cols=[
-        "base_madlad400_translation",
-        "finetuned_madlad400_translation",
-        "finetuned_helsinki_translation",
-        "base_helsinki_translation",
-    ],
-    reference_col="en",
-    metrics=["BLEU", "ChrF", "ChrF++"],
-    keep_cols=["es"],
-    run_id=2,
-    measure_time=False
-)
+    # 3) Run #1: collect per‐sentence timing
+    te.evaluate(
+        prediction_cols=[
+            "base_madlad400_translation",
+            "finetuned_madlad400_translation",
+            "finetuned_helsinki_translation",
+            "base_helsinki_translation",
+        ],
+        reference_col="en",
+        metrics=["BLEU", "ChrF", "ChrF++"],
+        keep_cols=["es"],
+        run_id=1,
+        measure_time=True,
+    )
 
-# 5) Write out all three sheets at once:
-te.save_excel()     # writes “my_results.xlsx” with Detailed / Summary / Timings
+    # 4) Run #2: no timing
+    te.evaluate(
+        prediction_cols=[
+            "base_madlad400_translation",
+            "finetuned_madlad400_translation",
+            "finetuned_helsinki_translation",
+            "base_helsinki_translation",
+        ],
+        reference_col="en",
+        metrics=["BLEU", "ChrF", "ChrF++"],
+        keep_cols=["es"],
+        run_id=2,
+        measure_time=False,
+    )
+
+    # 5) Write out all three sheets (Detailed, Summary, Timings)
+    te.save_excel()
+    print("Done! Results are in output_data.xlsx")
+
+if __name__ == "__main__":
+    main()
