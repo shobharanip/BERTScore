@@ -1,47 +1,43 @@
-# run_evaluation.py
-
 from translation_evaluator import TranslationEvaluator
 
 def main():
-    # 1) Instantiate, pointing at your desired output workbook
-    te = TranslationEvaluator(output_file="output_data.xlsx")
+    INPUT_XLSX  = "input_data.xlsx"   # your data with cols: en, es, 4 model cols
+    OUTPUT_XLSX = "output_data.xlsx"
 
-    # 2) Load your input (Excel or CSV) with cols: en, es, and your model‐prediction cols
-    te.load_data("input_data.xlsx")
+    te = TranslationEvaluator(output_file=OUTPUT_XLSX)
+    te.load_data(INPUT_XLSX)
 
-    # 3) Run #1: collect per‐sentence timing
+    MODELS = [
+        "base_madlad400_translation",
+        "finetuned_madlad400_translation",
+        "finetuned_helsinki_translation",
+        "base_helsinki_translation",
+    ]
+    KEEP   = ["es"]
+    METRICS = ["BLEU","ChrF","ChrF++"]
+
+    # Run 1: with per‐sentence timing
     te.evaluate(
-        prediction_cols=[
-            "base_madlad400_translation",
-            "finetuned_madlad400_translation",
-            "finetuned_helsinki_translation",
-            "base_helsinki_translation",
-        ],
+        prediction_cols=MODELS,
         reference_col="en",
-        metrics=["BLEU", "ChrF", "ChrF++"],
-        keep_cols=["es"],
+        metrics=METRICS,
+        keep_cols=KEEP,
         run_id=1,
         measure_time=True,
     )
 
-    # 4) Run #2: no timing
+    # Run 2: without timing
     te.evaluate(
-        prediction_cols=[
-            "base_madlad400_translation",
-            "finetuned_madlad400_translation",
-            "finetuned_helsinki_translation",
-            "base_helsinki_translation",
-        ],
+        prediction_cols=MODELS,
         reference_col="en",
-        metrics=["BLEU", "ChrF", "ChrF++"],
-        keep_cols=["es"],
+        metrics=METRICS,
+        keep_cols=KEEP,
         run_id=2,
         measure_time=False,
     )
 
-    # 5) Write out all three sheets (Detailed, Summary, Timings)
+    # Save all three sheets
     te.save_excel()
-    print("Done! Results are in output_data.xlsx")
 
 if __name__ == "__main__":
     main()
