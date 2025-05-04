@@ -1,195 +1,123 @@
-# -*- coding: utf-8 -*-
-"""
-Translation_evaluator_Research.py
-
-A class for:
-  1) loading translation / reference data
-  2) computing per-sentence (detailed) and corpus-level (summary) metrics
-     + BLEU, ChrF, ChrF++ (charf with word_order=2)
-  3) optionally measuring per-sentence latency
-  4) writing three sheets (Detailed, Summary, Timings) to an Excel workbook
-"""
-
 import time
-from pathlib import Path
-from typing import List, Union, Optional
 import pandas as pd
-from sacrebleu import sentence_bleu, sentence_chrf
-from sacrebleu.metrics import CHRF
-from sacrebleu import corpus_bleu, corpus_chrf
+from sacrebleu.metrics import BLEU, CHRF, CHRFplusplus
 
+# ──────────────────────────────────────────────────────────────────────────────
+#  Adjust these paths as needed
+INPUT_PATH   = "input_data.xlsx"
+OUTPUT_PATH  = "output_data.xlsx"
+REFERENCE    = "en"
+KEEP_COLS    = ["es"]  # any extra metadata columns you want to keep in Detailed
+MODEL_COLS   = [
+    "base_madlad400_translation",
+    "finetuned_madlad400_translation",
+    "finetuned_helsinki_translation",
+    "base_helsinki_translation",
+]
+METRICS      = {
+    "BLEU":      BLEU(effective_order=True),
+    "ChrF":      CHRF(word_order=1),
+    "ChrF++":    CHRFplusplus()
+}
+# ──────────────────────────────────────────────────────────────────────────────
 
-class TranslationEvaluator:
-    def __init__(self, output_file: Union[str, Path] = "output_data.xlsx"):
-        self.output_file = Path(output_file)
-        self._data: pd.DataFrame    = pd.DataFrame()
-        self._detailed: pd.DataFrame= pd.DataFrame()
-        self._summary: pd.DataFrame = pd.DataFrame()
-        self._timings: pd.DataFrame = pd.DataFrame()
-        # for corpus-level ChrF++
-        self._corpus_chrf2 = CHRF(word_order=2)
+def sentence_scores(metric_obj, ref, hyp):
+    """Wrap sacrebleu sentence metric call with a float return."""
+    # most sacrebleu sentence metrics return a sacrebleu.Scorer object with .score
+    return metric_obj.sentence_score(hyp, [ref]).score
 
-    def load_data(self, file: Union[str, Path], sheet_name: Union[int,str]=0) -> None:
-        p = Path(file)
-        if p.suffix.lower() in [".xls", ".xlsx"]:
-            self._data = pd.read_excel(p, sheet_name=sheet_name)
-        elif p.suffix.lower() == ".csv":
-            self._data = pd.read_csv(p)
-        else:
-            raise ValueError(f"Unsupported file type: {p.suffix!r}")
-        # clear any old results
-        self._detailed = pd.DataFrame()
-        self._summary  = pd.DataFrame()
-        self._timings  = pd.DataFrame()
+def corpus_scores(metric_obj, refs, hyps):
+    """Wrap sacrebleu corpus metric call with a float return."""
+    return metric_obj.corpus_score(hyps, [refs]).score
 
-    def evaluate(
-        self,
-        *,
-        prediction_cols: List[str],
-        reference_col: str = "en",
-        metrics: List[str] = ["BLEU", "ChrF", "ChrF++"],
-        keep_cols: Optional[List[str]] = None,
-        run_id: int = 1,
-        measure_time: bool = False,
-    ) -> None:
-        df = self._data
-        keeps = keep_cols or []
-        want = set(prediction_cols) | {reference_col} | set(keeps)
-        missing = want - set(df.columns)
-        if missing:
-            raise ValueError(f"Missing columns in data: {missing}")
+def main():
+    # 1) load your input
+    df = pd.read_excel(INPUT_PATH)
 
-        # 1) DETAILED
-        rows = []
-        for _, row in df.iterrows():
-            ref = str(row[reference_col])
-            for model in prediction_cols:
-                pred = str(row[model])
-                rec = {c: row[c] for c in keeps}
-                rec["model"] = model
-                rec["run"]   = run_id
-                rec[reference_col] = ref
+    detailed_rows = []
+    summary_rows  = []
+    timing_rows   = []
 
-                if "BLEU" in metrics:
-                    rec["BLEU"] = sentence_bleu(pred, [ref]).score
-                if "ChrF" in metrics:
-                    rec["ChrF"] = sentence_chrf(pred, [ref]).score
-                if "ChrF++" in metrics:
-                    rec["ChrF++"] = CHRF(word_order=2).score(pred, [ref])
+    # 2) two runs: timing vs no‑timing
+    for run_id, measure_time in [(1, True), (2, False)]:
+        # per‑model response times
+        model_times = { m: [] for m in MODEL_COLS }
 
+        # --- sentence‑level / Detailed:
+        for idx, row in df.iterrows():
+            ref = row[REFERENCE]
+            keep = { c: row[c] for c in KEEP_COLS }
+
+            for m in MODEL_COLS:
+                hyp = row[m]
+                # compute each metric
+                scores = {}
+                for name, obj in METRICS.items():
+                    if measure_time:
+                        t0 = time.time()
+                        sc = sentence_scores(obj, ref, hyp)
+                        t1 = time.time()
+                        model_times[m].append(t1 - t0)
+                    else:
+                        sc = sentence_scores(obj, ref, hyp)
+                    scores[name] = sc
+
+                entry = {
+                    REFERENCE:    ref,
+                    "model":      m,
+                    "run":        run_id,
+                    **keep,
+                    **scores
+                }
                 if measure_time:
-                    t0 = time.perf_counter()
-                    _ = sentence_bleu(pred, [ref])
-                    rec["response_time"] = time.perf_counter() - t0
+                    entry["response_time"] = model_times[m][-1]
+                detailed_rows.append(entry)
 
-                rows.append(rec)
+        # --- corpus‑level / Summary + avg response time:
+        for m in MODEL_COLS:
+            refs = df[REFERENCE].tolist()
+            hyps = df[m].tolist()
+            corp_scores = {
+                name: corpus_scores(obj, refs, hyps)
+                for name, obj in METRICS.items()
+            }
+            avg_rt = float(pd.Series(model_times[m]).mean()) if measure_time else None
 
-        det = pd.DataFrame(rows)
-        self._detailed = pd.concat([self._detailed, det], ignore_index=True)
+            summary_rows.append({
+                "model":      m,
+                "run":        run_id,
+                **corp_scores,
+                "avg_response_time": avg_rt
+            })
 
-        # 2) SUMMARY (corpus-level)
-        sum_rows = []
-        for model in prediction_cols:
-            rec = {"model": model, "run": run_id}
-            preds = df[model].astype(str).tolist()
-            refs  = df[reference_col].astype(str).tolist()
-            if "BLEU" in metrics:
-                rec["BLEU"] = corpus_bleu(preds, [refs]).score
-            if "ChrF" in metrics:
-                rec["ChrF"] = corpus_chrf(preds, [refs]).score
-            if "ChrF++" in metrics:
-                rec["ChrF++"] = self._corpus_chrf2.corpus_score(preds, [refs]).score
-            sum_rows.append(rec)
+        # --- store timings for the Timings sheet
+        for m in MODEL_COLS:
+            timing_rows.append({
+                "model": m,
+                "run":   run_id,
+                "avg_response_time": float(pd.Series(model_times[m]).mean())
+            })
 
-        self._summary = pd.concat(
-            [self._summary, pd.DataFrame(sum_rows)], ignore_index=True
-        )
+    # build DataFrames
+    det_df = pd.DataFrame(detailed_rows)
+    sum_df = pd.DataFrame(summary_rows)
+    tim_df = pd.DataFrame(timing_rows)
 
-        # 3) TIMINGS (average response_time per model/run)
-        if measure_time:
-            avg = det.groupby(["model", "run"], as_index=False)[
-                "response_time"
-            ].mean()
-            self._timings = pd.concat([self._timings, avg], ignore_index=True
-
-
-
-
-    def save_excel(self) -> None:
-        if self._detailed.empty:
-            raise RuntimeError("No data – call .evaluate() first.")
-
-        with pd.ExcelWriter(self.output_file, engine="openpyxl") as w:
-            # ─── DETAILED ────────────────────────────────────────────────────
-            det = self._detailed
-
-            # keep everything _except_ the metric columns as our index
-            idx_cols = [c for c in det.columns if c not in ("BLEU","ChrF","ChrF++","response_time")]
-            # metric columns are whatever's left
-            val_cols = [c for c in det.columns if c not in idx_cols]
-
-            det_pivot = det.pivot_table(
-                index=idx_cols,
-                columns=["run","model"],      # <-- swap run/model here
-                values=val_cols,
-                aggfunc="first",
-            )
-            det_pivot.to_excel(w, sheet_name="Detailed")
-
-            # ─── SUMMARY ─────────────────────────────────────────────────────
-            sm = self._summary
-            # first melt into long form
-            long = (
-                sm
-                .melt(id_vars=["model","run"], var_name="metric", value_name="score")
-            )
-            # then pivot so metrics down the left, runs & models across the top
-            sum_pivot = long.pivot(
-                index="metric",
-                columns=["run","model"],
-                values="score",
-            )
-            sum_pivot.to_excel(w, sheet_name="Summary")
-
-            # ─── TIMINGS ────────────────────────────────────────────────────
-            if not self._timings.empty:
-                tm = self._timings
-                # pivot so each run is its own column
-                tim_pivot = tm.pivot(
-                    index="model",
-                    columns="run",
-                    values="response_time"
-                )
-                tim_pivot.to_excel(w, sheet_name="Timings")
-
-
-
-
-
-
-
-def save_excel(self):
-    det = self._detailed
-    if det is None or det.empty:
-        raise RuntimeError("No detailed results! Call .evaluate() twice first.")
-
-    # 1) Detailed sheet
-    # choose your keep‐cols (here: reference + any extras)
-    keep = [self.reference_col] + (self.keep_cols or [])
-    # metrics are everything else except model/run/keep
-    metrics = [c for c in det.columns if c not in keep + ["model","run"]]
-
-    det_pivot = det.pivot_table(
+    # 3) pivot into the three sheets
+    # 3a) Detailed: index = [REFERENCE]+KEEP_COLS, columns = (model,run), values = metrics (+response_time)
+    keep = [REFERENCE] + KEEP_COLS
+    values = [c for c in det_df.columns if c not in keep + ["model","run"]]
+    det_pivot = det_df.pivot_table(
         index=keep,
         columns=["model","run"],
-        values=metrics,
-        aggfunc="first",
+        values=values,
+        aggfunc="first"
     )
 
-    # 2) Summary sheet (as before)
-    sm = self._summary
-    long = sm.melt(
+    # 3b) Summary: melt then pivot so metrics×(run,model)
+    long = sum_df.melt(
         id_vars=["model","run"],
+        value_vars=[c for c in sum_df.columns if c not in ("model","run")],
         var_name="metric",
         value_name="score"
     )
@@ -199,16 +127,20 @@ def save_excel(self):
         values="score"
     )
 
-    # 3) Timing sheet
-    tm = self._timings
-    tim_pivot = tm.pivot(
+    # 3c) Timings: model×run table of avg_response_time
+    tim_pivot = tim_df.pivot(
         index="model",
         columns="run",
-        values="response_time"
+        values="avg_response_time"
     )
 
-    # 4) Write all three
-    with pd.ExcelWriter(self._output_file, engine="openpyxl") as w:
+    # 4) write out
+    with pd.ExcelWriter(OUTPUT_PATH, engine="openpyxl") as w:
         det_pivot.to_excel(w, sheet_name="Detailed")
         sum_pivot.to_excel(w, sheet_name="Summary")
         tim_pivot.to_excel(w, sheet_name="Timings")
+
+    print(f"Wrote {OUTPUT_PATH} with sheets: Detailed, Summary, Timings")
+
+if __name__ == "__main__":
+    main()
