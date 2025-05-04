@@ -1,54 +1,143 @@
-# run_translation_eval.py
-from Translation_evaluator_Research import TranslationEvaluator
+# -*- coding: utf-8 -*-
+"""
+Translation_evaluator_Research.py
 
-def main():
-    # ────────────────────────────────────────────────────────────────
-    # 1) Tweak these two paths to point at YOUR files:
-    INPUT_XLSX  = r"C:/Users/…/Documents/2. Spanish model/input_data.xlsx"
-    OUTPUT_XLSX = r"C:/Users/…/Documents/2. Spanish model/output_data.xlsx"
-    # ────────────────────────────────────────────────────────────────
+A class for:
+  1) loading translation / reference data
+  2) computing per-sentence (detailed) and corpus-level (summary) metrics
+     + BLEU, ChrF, ChrF++ (charf with word_order=2)
+  3) optionally measuring per-sentence latency
+  4) writing three sheets (Detailed, Summary, Timings) to an Excel workbook
+"""
 
-    te = TranslationEvaluator(output_file=OUTPUT_XLSX)
+import time
+from pathlib import Path
+from typing import List, Union, Optional
+import pandas as pd
+from sacrebleu import sentence_bleu, sentence_chrf
+from sacrebleu.metrics import CHRF
+from sacrebleu import corpus_bleu, corpus_chrf
 
-    # load_data will read the first sheet by default; if yours lives on
-    # a different tab, change `sheet_name="YourSheetName"` below.
-    te.load_data(INPUT_XLSX)  
-    print("❯❯ Loaded columns:", te._data.columns.tolist())
 
-    # the four model‐output columns in your sheet:
-    MODELS  = [
-      "base_madlad400_translation",
-      "finetuned_madlad400_translation",
-      "finetuned_helsinki_translation",
-      "base_helsinki_translation",
-    ]
-    KEEP    = ["es"]        # any extra columns you want to carry through
-    METRICS = ["BLEU", "ChrF", "ChrF++"]
+class TranslationEvaluator:
+    def __init__(self, output_file: Union[str, Path] = "output_data.xlsx"):
+        self.output_file = Path(output_file)
+        self._data: pd.DataFrame    = pd.DataFrame()
+        self._detailed: pd.DataFrame= pd.DataFrame()
+        self._summary: pd.DataFrame = pd.DataFrame()
+        self._timings: pd.DataFrame = pd.DataFrame()
+        # for corpus-level ChrF++
+        self._corpus_chrf2 = CHRF(word_order=2)
 
-    # ────────────────────────────────────────────────────────────────
-    # Run #1: measure per‐sentence timings
-    te.evaluate(
-      prediction_cols = MODELS,
-      reference_col   = "en",
-      metrics         = METRICS,
-      keep_cols       = KEEP,
-      run_id          = 1,
-      measure_time    = True,
-    )
+    def load_data(self, file: Union[str, Path], sheet_name: Union[int,str]=0) -> None:
+        p = Path(file)
+        if p.suffix.lower() in [".xls", ".xlsx"]:
+            self._data = pd.read_excel(p, sheet_name=sheet_name)
+        elif p.suffix.lower() == ".csv":
+            self._data = pd.read_csv(p)
+        else:
+            raise ValueError(f"Unsupported file type: {p.suffix!r}")
+        # clear any old results
+        self._detailed = pd.DataFrame()
+        self._summary  = pd.DataFrame()
+        self._timings  = pd.DataFrame()
 
-    # Run #2: no per‐sentence timings
-    te.evaluate(
-      prediction_cols = MODELS,
-      reference_col   = "en",
-      metrics         = METRICS,
-      keep_cols       = KEEP,
-      run_id          = 2,
-      measure_time    = False,
-    )
+    def evaluate(
+        self,
+        *,
+        prediction_cols: List[str],
+        reference_col: str = "en",
+        metrics: List[str] = ["BLEU", "ChrF", "ChrF++"],
+        keep_cols: Optional[List[str]] = None,
+        run_id: int = 1,
+        measure_time: bool = False,
+    ) -> None:
+        df = self._data
+        keeps = keep_cols or []
+        want = set(prediction_cols) | {reference_col} | set(keeps)
+        missing = want - set(df.columns)
+        if missing:
+            raise ValueError(f"Missing columns in data: {missing}")
 
-    # write out all three sheets into output_data.xlsx
-    te.save_excel()
-    print(f"✅ Done!  Written → {OUTPUT_XLSX}")
+        # 1) DETAILED
+        rows = []
+        for _, row in df.iterrows():
+            ref = str(row[reference_col])
+            for model in prediction_cols:
+                pred = str(row[model])
+                rec = {c: row[c] for c in keeps}
+                rec["model"] = model
+                rec["run"]   = run_id
+                rec[reference_col] = ref
 
-if __name__ == "__main__":
-    main()
+                if "BLEU" in metrics:
+                    rec["BLEU"] = sentence_bleu(pred, [ref]).score
+                if "ChrF" in metrics:
+                    rec["ChrF"] = sentence_chrf(pred, [ref]).score
+                if "ChrF++" in metrics:
+                    rec["ChrF++"] = CHRF(word_order=2).score(pred, [ref])
+
+                if measure_time:
+                    t0 = time.perf_counter()
+                    _ = sentence_bleu(pred, [ref])
+                    rec["response_time"] = time.perf_counter() - t0
+
+                rows.append(rec)
+
+        det = pd.DataFrame(rows)
+        self._detailed = pd.concat([self._detailed, det], ignore_index=True)
+
+        # 2) SUMMARY (corpus-level)
+        sum_rows = []
+        for model in prediction_cols:
+            rec = {"model": model, "run": run_id}
+            preds = df[model].astype(str).tolist()
+            refs  = df[reference_col].astype(str).tolist()
+            if "BLEU" in metrics:
+                rec["BLEU"] = corpus_bleu(preds, [refs]).score
+            if "ChrF" in metrics:
+                rec["ChrF"] = corpus_chrf(preds, [refs]).score
+            if "ChrF++" in metrics:
+                rec["ChrF++"] = self._corpus_chrf2.corpus_score(preds, [refs]).score
+            sum_rows.append(rec)
+
+        self._summary = pd.concat(
+            [self._summary, pd.DataFrame(sum_rows)], ignore_index=True
+        )
+
+        # 3) TIMINGS (average response_time per model/run)
+        if measure_time:
+            avg = det.groupby(["model", "run"], as_index=False)[
+                "response_time"
+            ].mean()
+            self._timings = pd.concat([self._timings, avg], ignore_index=True)
+
+    def save_excel(self) -> None:
+        if self._detailed.empty:
+            raise RuntimeError("No detailed data to write. Call .evaluate() first.")
+
+        with pd.ExcelWriter(self.output_file, engine="openpyxl") as w:
+            # ─── DETAILED ────────────────────────────────────────────────────
+            det = self._detailed
+            idx_cols = [c for c in det.columns if c not in ("BLEU","ChrF","ChrF++","response_time")]
+            val_cols = [c for c in det.columns if c not in idx_cols]
+            det_pivot = det.pivot_table(
+                index=idx_cols,
+                columns=["model","run"],
+                values=val_cols,
+                aggfunc="first",
+            )
+            det_pivot.to_excel(w, sheet_name="Detailed")
+
+            # ─── SUMMARY ─────────────────────────────────────────────────────
+            sm = self._summary
+            sum_piv = sm.pivot(
+                index="model",
+                columns="run",
+                values=[c for c in sm.columns if c not in ("model","run")],
+            )
+            sum_piv.to_excel(w, sheet_name="Summary")
+
+            # ─── TIMINGS ────────────────────────────────────────────────────
+            if not self._timings.empty:
+                self._timings.to_excel(w, sheet_name="Timings", index=False)
