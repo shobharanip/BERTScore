@@ -1,0 +1,54 @@
+# run_translation_eval.py
+from Translation_evaluator_Research import TranslationEvaluator
+
+def main():
+    # ────────────────────────────────────────────────────────────────
+    # 1) Tweak these two paths to point at YOUR files:
+    INPUT_XLSX  = r"C:/Users/…/Documents/2. Spanish model/input_data.xlsx"
+    OUTPUT_XLSX = r"C:/Users/…/Documents/2. Spanish model/output_data.xlsx"
+    # ────────────────────────────────────────────────────────────────
+
+    te = TranslationEvaluator(output_file=OUTPUT_XLSX)
+
+    # load_data will read the first sheet by default; if yours lives on
+    # a different tab, change `sheet_name="YourSheetName"` below.
+    te.load_data(INPUT_XLSX)  
+    print("❯❯ Loaded columns:", te._data.columns.tolist())
+
+    # the four model‐output columns in your sheet:
+    MODELS  = [
+      "base_madlad400_translation",
+      "finetuned_madlad400_translation",
+      "finetuned_helsinki_translation",
+      "base_helsinki_translation",
+    ]
+    KEEP    = ["es"]        # any extra columns you want to carry through
+    METRICS = ["BLEU", "ChrF", "ChrF++"]
+
+    # ────────────────────────────────────────────────────────────────
+    # Run #1: measure per‐sentence timings
+    te.evaluate(
+      prediction_cols = MODELS,
+      reference_col   = "en",
+      metrics         = METRICS,
+      keep_cols       = KEEP,
+      run_id          = 1,
+      measure_time    = True,
+    )
+
+    # Run #2: no per‐sentence timings
+    te.evaluate(
+      prediction_cols = MODELS,
+      reference_col   = "en",
+      metrics         = METRICS,
+      keep_cols       = KEEP,
+      run_id          = 2,
+      measure_time    = False,
+    )
+
+    # write out all three sheets into output_data.xlsx
+    te.save_excel()
+    print(f"✅ Done!  Written → {OUTPUT_XLSX}")
+
+if __name__ == "__main__":
+    main()
