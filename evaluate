@@ -161,3 +161,54 @@ class TranslationEvaluator:
                     values="response_time"
                 )
                 tim_pivot.to_excel(w, sheet_name="Timings")
+
+
+
+
+
+
+
+def save_excel(self):
+    det = self._detailed
+    if det is None or det.empty:
+        raise RuntimeError("No detailed results! Call .evaluate() twice first.")
+
+    # 1) Detailed sheet
+    # choose your keep‐cols (here: reference + any extras)
+    keep = [self.reference_col] + (self.keep_cols or [])
+    # metrics are everything else except model/run/keep
+    metrics = [c for c in det.columns if c not in keep + ["model","run"]]
+
+    det_pivot = det.pivot_table(
+        index=keep,
+        columns=["model","run"],
+        values=metrics,
+        aggfunc="first",
+    )
+
+    # 2) Summary sheet (as before)
+    sm = self._summary
+    long = sm.melt(
+        id_vars=["model","run"],
+        var_name="metric",
+        value_name="score"
+    )
+    sum_pivot = long.pivot(
+        index="metric",
+        columns=["run","model"],
+        values="score"
+    )
+
+    # 3) Timing sheet
+    tm = self._timings
+    tim_pivot = tm.pivot(
+        index="model",
+        columns="run",
+        values="response_time"
+    )
+
+    # 4) Write all three
+    with pd.ExcelWriter(self._output_file, engine="openpyxl") as w:
+        det_pivot.to_excel(w, sheet_name="Detailed")
+        sum_pivot.to_excel(w, sheet_name="Summary")
+        tim_pivot.to_excel(w, sheet_name="Timings")
