@@ -1,0 +1,53 @@
+# -*- coding: utf-8 -*-
+"""
+Driver script for TranslationEvaluator.
+Adjust INPUT_FILE and OUTPUT_FILE paths below.
+"""
+
+from Translation_evaluator_Research import TranslationEvaluator
+
+def main():
+    # ────────────────────────────────────────────────────────────────
+    INPUT_FILE  = r"C:/Users/YourName/Documents/2. Spanish model/input_data.xlsx"
+    OUTPUT_FILE = r"C:/Users/YourName/Documents/2. Spanish model/output_data.xlsx"
+    # ────────────────────────────────────────────────────────────────
+
+    te = TranslationEvaluator(output_file=OUTPUT_FILE)
+    te.load_data(INPUT_FILE)
+    print("Loaded columns:", te._data.columns.tolist())
+
+    MODELS  = [
+      "base_madlad400_translation",
+      "finetuned_madlad400_translation",
+      "finetuned_helsinki_translation",
+      "base_helsinki_translation",
+    ]
+    KEEP    = ["es"]
+    METRICS = ["BLEU", "ChrF", "ChrF++"]
+
+    # Run #1: with per-sentence timing
+    te.evaluate(
+      prediction_cols = MODELS,
+      reference_col   = "en",
+      metrics         = METRICS,
+      keep_cols       = KEEP,
+      run_id          = 1,
+      measure_time    = True,
+    )
+
+    # Run #2: no timing
+    te.evaluate(
+      prediction_cols = MODELS,
+      reference_col   = "en",
+      metrics         = METRICS,
+      keep_cols       = KEEP,
+      run_id          = 2,
+      measure_time    = False,
+    )
+
+    # write out all three sheets
+    te.save_excel()
+    print(f"✅ Written results to {OUTPUT_FILE}")
+
+if __name__ == "__main__":
+    main()
