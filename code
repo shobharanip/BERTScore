@@ -1,5 +1,3 @@
-# batch_bertscore.py
-
 from fastapi import FastAPI, HTTPException, UploadFile, File
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
@@ -16,14 +14,14 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# where your model lives on disk
+# where your local model lives
 MODEL_PATH = os.getenv(
     "BERT",
     "/appdata/cortex/dev4/shared/libs/huggingface/roberta-large"
 )
 DEVICE = "cuda" if os.environ.get("CUDA_VISIBLE_DEVICES") else "cpu"
 
-# load the metric defined in your bertscore.py
+# load your custom metric
 try:
     scorer = evaluate.load("bertscore")
     print("✅  Loaded local bertscore metric")
@@ -39,15 +37,15 @@ class ScoreResponse(BaseModel):
     precision: list[float]
     recall:    list[float]
     f1:        list[float]
-    model_type: str = "roberta-large"
-    version:    str = "0.3.12"
+    model_type:str = "roberta-large"
+    version:   str = "0.3.12"
 
 @app.get("/")
 async def health_check():
     return {
-        "status": "healthy" if scorer else "failed",
-        "model": MODEL_PATH,
-        "device": DEVICE
+        "status":   "healthy" if scorer else "failed",
+        "model":    MODEL_PATH,
+        "device":   DEVICE
     }
 
 @app.post("/bertscore/", response_model=ScoreResponse)
@@ -55,17 +53,19 @@ async def calculate_score(request: ScoreRequest):
     if scorer is None:
         raise HTTPException(500, "Metric failed to load")
     if len(request.reference) != len(request.candidate):
-        raise HTTPException(400, "reference and candidate must have the same length")
+        raise HTTPException(400, "reference and candidate lists must have the same length")
 
     try:
         out = scorer.compute(
-            predictions=request.candidate,
-            references=request.reference,
+            predictions=[str(s).strip() for s in request.candidate],
+            references=[str(s).strip() for s in request.reference],
             model_type=MODEL_PATH,
             num_layers=17,
             device=DEVICE,
+            rescale_with_baseline=True      # ← use built‑in rescale
         )
         P, R, F1 = out["precision"], out["recall"], out["f1"]
+
         return {
             "precision": [round(float(x), 6) for x in P],
             "recall":    [round(float(x), 6) for x in R],
@@ -83,8 +83,7 @@ async def batch_local():
         raise HTTPException(500, "Metric failed to load")
 
     inp = "/appdata/cortex/dev4/shobha/input_data.xlsx"
-    out = "/appdata/cortex/dev4/shobha/output_data.xlsx"
-
+    out = "/appdata/cortex/dev4/shobha/evaluate_output_data.xlsx"
     if not os.path.exists(inp):
         raise HTTPException(404, f"Input file not found: {inp}")
 
@@ -93,17 +92,18 @@ async def batch_local():
     except Exception as e:
         raise HTTPException(500, f"Could not read Excel: {e}")
 
-    for col in ("reference","candidate"):
+    for col in ("reference", "candidate"):
         if col not in df.columns:
             raise HTTPException(400, f"Excel must have '{col}' column")
 
     try:
         res = scorer.compute(
-            predictions=df["candidate"].astype(str).tolist(),
-            references =df["reference"].astype(str).tolist(),
+            predictions=df["candidate"].astype(str).str.strip().tolist(),
+            references=df["reference"].astype(str).str.strip().tolist(),
             model_type=MODEL_PATH,
             num_layers=17,
             device=DEVICE,
+            rescale_with_baseline=True
         )
         df["precision"] = res["precision"]
         df["recall"]    = res["recall"]
@@ -134,17 +134,18 @@ async def batch_bert(file: UploadFile = File()):
     except Exception as e:
         raise HTTPException(400, f"Cannot read Excel: {e}")
 
-    for col in ("reference","candidate"):
+    for col in ("reference", "candidate"):
         if col not in df.columns:
             raise HTTPException(400, f"Excel must have '{col}' column")
 
     try:
         res = scorer.compute(
-            predictions=df["candidate"].astype(str).tolist(),
-            references =df["reference"].astype(str).tolist(),
+            predictions=df["candidate"].astype(str).str.strip().tolist(),
+            references=df["reference"].astype(str).str.strip().tolist(),
             model_type=MODEL_PATH,
             num_layers=17,
             device=DEVICE,
+            rescale_with_baseline=True
         )
         df["precision"] = res["precision"]
         df["recall"]    = res["recall"]
