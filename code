@@ -1,3 +1,5 @@
+"precision": [round(min(max(x, 0.0), 1.0), 6) for x in out["precision"]],
+
 from fastapi import FastAPI, HTTPException, UploadFile, File
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
