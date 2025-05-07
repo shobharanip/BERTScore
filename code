@@ -19,6 +19,9 @@ MODEL_PATH = os.getenv(
     "BERT",
     "/appdata/cortex/dev4/shared/libs/huggingface/roberta-large"
 )
+# path to your downloaded baseline .npz file
+BASELINE_PATH = "/appdata/baseline/roberta-large_L17_en.npz"
+
 DEVICE = "cuda" if os.environ.get("CUDA_VISIBLE_DEVICES") else "cpu"
 
 # load your custom metric
@@ -62,9 +65,11 @@ async def calculate_score(request: ScoreRequest):
             model_type=MODEL_PATH,
             num_layers=17,
             device=DEVICE,
-            rescale_with_baseline=True      # ← use built‑in rescale
+            rescale_with_baseline=True,
+            lang="en",
+            baseline_path=BASELINE_PATH
         )
-        # clamp scores between 0 and 1
+        # clamp between 0 and 1
         P = np.clip(out["precision"], 0.0, 1.0)
         R = np.clip(out["recall"],    0.0, 1.0)
         F1 = np.clip(out["f1"],       0.0, 1.0)
@@ -106,9 +111,10 @@ async def batch_local():
             model_type=MODEL_PATH,
             num_layers=17,
             device=DEVICE,
-            rescale_with_baseline=True
+            rescale_with_baseline=True,
+            lang="en",
+            baseline_path=BASELINE_PATH
         )
-        # clamp before assigning back
         df["precision"] = np.clip(res["precision"], 0.0, 1.0)
         df["recall"]    = np.clip(res["recall"],    0.0, 1.0)
         df["f1"]        = np.clip(res["f1"],        0.0, 1.0)
@@ -149,9 +155,10 @@ async def batch_bert(file: UploadFile = File()):
             model_type=MODEL_PATH,
             num_layers=17,
             device=DEVICE,
-            rescale_with_baseline=True
+            rescale_with_baseline=True,
+            lang="en",
+            baseline_path=BASELINE_PATH
         )
-        # clamp before adding to DataFrame
         df["precision"] = np.clip(res["precision"], 0.0, 1.0)
         df["recall"]    = np.clip(res["recall"],    0.0, 1.0)
         df["f1"]        = np.clip(res["f1"],        0.0, 1.0)
