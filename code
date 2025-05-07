@@ -1,183 +1,27 @@
-"precision": [round(min(max(x, 0.0), 1.0), 6) for x in out["precision"]],
+Hi Team,
 
-from fastapi import FastAPI, HTTPException, UploadFile, File
-from fastapi.responses import FileResponse
-from pydantic import BaseModel
-import evaluate           # picks up your local bertscore.py
-import numpy as np
-import pandas as pd
-import os
-import tempfile
-import traceback
+I wanted to let you know that I’ve updated our BERTScore evaluation pipeline to use HuggingFace’s built‑in baseline rescaling instead of manually hard‑coding a baseline value. Below is a quick overview of what’s changed, why it’s better, and two small examples—one for our English “above” evaluation and one for the Spanish model report.
 
-app = FastAPI(
-    title="Roberta large BERTScore API",
-    description="API for calculating BERTScore between reference and candidate texts",
-    version="1.0.0"
-)
+⸻
 
-# where your local model lives
-MODEL_PATH = os.getenv(
-    "BERT",
-    "/appdata/cortex/dev4/shared/libs/huggingface/roberta-large"
-)
+1. What changed and why
+	•	Old approach: We subtracted a fixed baseline (e.g., 0.7) and linearly scaled scores to [0,1]. This required maintaining an external constant and risked mis‑scaling if the true “random” baseline shifted by model or language.
+	•	New approach: We simply pass rescale_with_baseline=True (plus the appropriate lang code) to scorer.compute(). HuggingFace automatically estimates the reference‑vs‑reference baseline for that language and model, then normalizes all Precision, Recall, and F1 scores into [0,1]. This ensures consistency across models and avoids any manual constants.
 
-# path to the TSV baseline you found under bert_score/rescale_baseline/en
-BASELINE_PATH = "/appdata/baseline/roberta-large.tsv"
+⸻
 
-DEVICE = "cuda" if os.environ.get("CUDA_VISIBLE_DEVICES") else "cpu"
+2. How rescale_with_baseline works
+	1.	For a given language/model, HF computes the average BERTScore between identical reference sentences (“reference → reference baseline”).
+	2.	It subtracts that baseline from each raw score and divides by (1 − baseline).
+	3.	The result is guaranteed to lie between 0 (no better than random) and 1 (perfect match).
 
-# load your custom metric
-try:
-    scorer = evaluate.load("bertscore")
-    print("✅  Loaded local bertscore metric")
-except Exception as e:
-    print("❌  Failed to load bertscore metric:", e)
-    scorer = None
+Here, instead of (raw_score – 0.7)/(1–0.7), HF’s baseline might be ~0.38, so (raw_score – 0.38)/0.62 is applied automatically.
 
-class ScoreRequest(BaseModel):
-    reference: list[str]
-    candidate: list[str]
+By using lang="es", the baseline is estimated on Spanish references, giving us true 0–1 scores that reflect model quality, not arbitrary thresholds.
 
-class ScoreResponse(BaseModel):
-    precision: list[float]
-    recall:    list[float]
-    f1:        list[float]
-    model_type: str = "roberta-large"
-    version:    str = "0.3.12"
+⸻
 
-@app.get("/")
-async def health_check():
-    return {
-        "status":   "healthy" if scorer else "failed",
-        "model":    MODEL_PATH,
-        "device":   DEVICE
-    }
+Please let me know if you have any questions or need additional examples. Thanks!
 
-@app.post("/bertscore/", response_model=ScoreResponse)
-async def calculate_score(request: ScoreRequest):
-    if scorer is None:
-        raise HTTPException(500, "Metric failed to load")
-    if len(request.reference) != len(request.candidate):
-        raise HTTPException(400, "reference and candidate lists must have the same length")
-
-    try:
-        out = scorer.compute(
-            predictions=[str(s).strip() for s in request.candidate],
-            references=[str(s).strip() for s in request.reference],
-            model_type=MODEL_PATH,
-            num_layers=17,
-            device=DEVICE,
-            rescale_with_baseline=True,
-            lang="en",
-            baseline_path=BASELINE_PATH
-        )
-        # clamp between 0 and 1
-        P  = np.clip(out["precision"], 0.0, 1.0)
-        R  = np.clip(out["recall"],    0.0, 1.0)
-        F1 = np.clip(out["f1"],       0.0, 1.0)
-
-        return {
-            "precision": [round(float(x), 6) for x in P],
-            "recall":    [round(float(x), 6) for x in R],
-            "f1":        [round(float(x), 6) for x in F1],
-            "model_type":"roberta-large",
-            "version":   "0.3.12"
-        }
-    except Exception as e:
-        print(traceback.format_exc())
-        raise HTTPException(500, str(e))
-
-@app.get("/batch-local/")
-async def batch_local():
-    if scorer is None:
-        raise HTTPException(500, "Metric failed to load")
-
-    inp = "/appdata/cortex/dev4/shobha/input_data.xlsx"
-    out = "/appdata/cortex/dev4/shobha/evaluate_output_data.xlsx"
-    if not os.path.exists(inp):
-        raise HTTPException(404, f"Input file not found: {inp}")
-
-    try:
-        df = pd.read_excel(inp)
-    except Exception as e:
-        raise HTTPException(500, f"Could not read Excel: {e}")
-
-    for col in ("reference", "candidate"):
-        if col not in df.columns:
-            raise HTTPException(400, f"Excel must have '{col}' column")
-
-    try:
-        res = scorer.compute(
-            predictions=df["candidate"].astype(str).str.strip().tolist(),
-            references=df["reference"].astype(str).str.strip().tolist(),
-            model_type=MODEL_PATH,
-            num_layers=17,
-            device=DEVICE,
-            rescale_with_baseline=True,
-            lang="en",
-            baseline_path=BASELINE_PATH
-        )
-        df["precision"] = np.clip(res["precision"], 0.0, 1.0)
-        df["recall"]    = np.clip(res["recall"],    0.0, 1.0)
-        df["f1"]        = np.clip(res["f1"],        0.0, 1.0)
-    except Exception as e:
-        raise HTTPException(500, f"Scoring error: {e}")
-
-    try:
-        df.to_excel(out, index=False)
-    except Exception as e:
-        raise HTTPException(500, f"Cannot write Excel: {e}")
-
-    return FileResponse(
-        out,
-        filename=os.path.basename(out),
-        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    )
-
-@app.post("/batch-bert/")
-async def batch_bert(file: UploadFile = File()):
-    if scorer is None:
-        raise HTTPException(500, "Metric failed to load")
-    if not file.filename.lower().endswith((".xls", ".xlsx")):
-        raise HTTPException(400, "Upload an .xls or .xlsx file")
-
-    try:
-        df = pd.read_excel(file.file)
-    except Exception as e:
-        raise HTTPException(400, f"Cannot read Excel: {e}")
-
-    for col in ("reference", "candidate"):
-        if col not in df.columns:
-            raise HTTPException(400, f"Excel must have '{col}' column")
-
-    try:
-        res = scorer.compute(
-            predictions=df["candidate"].astype(str).str.strip().tolist(),
-            references=df["reference"].astype(str).str.strip().tolist(),
-            model_type=MODEL_PATH,
-            num_layers=17,
-            device=DEVICE,
-            rescale_with_baseline=True,
-            lang="en",
-            baseline_path=BASELINE_PATH
-        )
-        df["precision"] = np.clip(res["precision"], 0.0, 1.0)
-        df["recall"]    = np.clip(res["recall"],    0.0, 1.0)
-        df["f1"]        = np.clip(res["f1"],        0.0, 1.0)
-    except Exception as e:
-        raise HTTPException(500, f"Scoring error: {e}")
-
-    tmp = tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False)
-    df.to_excel(tmp.name, index=False)
-    tmp.close()
-
-    return FileResponse(
-        tmp.name,
-        filename="bert_results.xlsx",
-        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    )
-
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+Best regards,
+Shobharani Polasa
