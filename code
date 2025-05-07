@@ -8,60 +8,58 @@ import pandas as pd
 df = testdf.copy()
 
 # ——————————————————————————————
-# 2. Generate both model translations
+# 2. Define your 10 “runs” as (label, function) pairs
+#    Replace model3_translate…model10_translate with your actual callables
 # ——————————————————————————————
-df['base_madlad400_translation'] = df['es'].apply(base_madlad_translate)
-df['base_helsinki_translation'] = df['es'].apply(base_helsinki_translate)
-
-# ——————————————————————————————
-# 3. Time each call (run1 = madlad400, run2 = helsinki)
-# ——————————————————————————————
-run1_times = []
-run2_times = []
-
-for text in df['es']:
-    t0 = time.time()
-    _ = base_madlad_translate(text)
-    run1_times.append(time.time() - t0)
-
-    t0 = time.time()
-    _ = base_helsinki_translate(text)
-    run2_times.append(time.time() - t0)
-
-df['run1_time'] = run1_times
-df['run2_time'] = run2_times
+runs = [
+    ('run1',   base_madlad_translate),
+    ('run2',   base_helsinki_translate),
+    ('run3',   model3_translate),
+    ('run4',   model4_translate),
+    ('run5',   model5_translate),
+    ('run6',   model6_translate),
+    ('run7',   model7_translate),
+    ('run8',   model8_translate),
+    ('run9',   model9_translate),
+    ('run10',  model10_translate),
+]
 
 # ——————————————————————————————
-# 4. Compute average response times
+# 3. For each run:
+#    • generate translations
+#    • measure per‐sentence response time
+# ——————————————————————————————
+for label, fn in runs:
+    # translation output column
+    df[f'{label}_translation'] = df['es'].apply(fn)
+    # timing column
+    times = []
+    for text in df['es']:
+        t0 = time.time()
+        _ = fn(text)
+        times.append(time.time() - t0)
+    df[f'{label}_time'] = times
+
+# ——————————————————————————————
+# 4. Compute average response time per run
 # ——————————————————————————————
 avg_df = pd.DataFrame({
-    'run': ['run1', 'run2'],
-    'avg_time_sec': [
-        df['run1_time'].mean(),
-        df['run2_time'].mean()
-    ]
+    'run':         [label for label, _ in runs],
+    'avg_time_s': [ df[f'{label}_time'].mean() for label, _ in runs ]
 })
 
 # ——————————————————————————————
-# 5. Export to Excel with two sheets
+# 5. Write out to Excel with two sheets
 # ——————————————————————————————
-with pd.ExcelWriter('response_times.xlsx', engine='openpyxl') as writer:
-    # Sheet 1: include index, inputs, reference, translations, and timings
+with pd.ExcelWriter('response_times_10runs.xlsx', engine='openpyxl') as writer:
+    # Sheet 1: inputs, reference, all 10 translations + timing columns
     df.to_excel(
         writer,
         sheet_name='Per_Sentence_Times',
-        columns=[
-            'es',
-            'en',
-            'base_madlad400_translation',
-            'base_helsinki_translation',
-            'run1_time',
-            'run2_time'
-        ],
         index=True,
         index_label='Index'
     )
-    # Sheet 2: average times per run
+    # Sheet 2: average time per run
     avg_df.to_excel(
         writer,
         sheet_name='Average_Times',
