@@ -37,8 +37,8 @@ class ScoreResponse(BaseModel):
     precision: list[float]
     recall:    list[float]
     f1:        list[float]
-    model_type:str = "roberta-large"
-    version:   str = "0.3.12"
+    model_type: str = "roberta-large"
+    version:    str = "0.3.12"
 
 @app.get("/")
 async def health_check():
@@ -64,7 +64,10 @@ async def calculate_score(request: ScoreRequest):
             device=DEVICE,
             rescale_with_baseline=True      # ← use built‑in rescale
         )
-        P, R, F1 = out["precision"], out["recall"], out["f1"]
+        # clamp scores between 0 and 1
+        P = np.clip(out["precision"], 0.0, 1.0)
+        R = np.clip(out["recall"],    0.0, 1.0)
+        F1 = np.clip(out["f1"],       0.0, 1.0)
 
         return {
             "precision": [round(float(x), 6) for x in P],
@@ -105,9 +108,10 @@ async def batch_local():
             device=DEVICE,
             rescale_with_baseline=True
         )
-        df["precision"] = res["precision"]
-        df["recall"]    = res["recall"]
-        df["f1"]        = res["f1"]
+        # clamp before assigning back
+        df["precision"] = np.clip(res["precision"], 0.0, 1.0)
+        df["recall"]    = np.clip(res["recall"],    0.0, 1.0)
+        df["f1"]        = np.clip(res["f1"],        0.0, 1.0)
     except Exception as e:
         raise HTTPException(500, f"Scoring error: {e}")
 
@@ -147,9 +151,10 @@ async def batch_bert(file: UploadFile = File()):
             device=DEVICE,
             rescale_with_baseline=True
         )
-        df["precision"] = res["precision"]
-        df["recall"]    = res["recall"]
-        df["f1"]        = res["f1"]
+        # clamp before adding to DataFrame
+        df["precision"] = np.clip(res["precision"], 0.0, 1.0)
+        df["recall"]    = np.clip(res["recall"],    0.0, 1.0)
+        df["f1"]        = np.clip(res["f1"],        0.0, 1.0)
     except Exception as e:
         raise HTTPException(500, f"Scoring error: {e}")
 
