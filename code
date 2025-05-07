@@ -1,3 +1,8 @@
+
+mkdir -p /appdata/baseline
+wget -O /appdata/baseline/roberta-large_L17_en.npz \
+  https://raw.githubusercontent.com/Tiiiger/bert_score/master/bert_score/baseline/roberta-large_L17_en.npz
+
 from fastapi import FastAPI, HTTPException, UploadFile, File
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
