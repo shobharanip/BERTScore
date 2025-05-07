@@ -1,44 +1,67 @@
 import time
 import pandas as pd
 
-# 1. Prepare your DataFrame
-#    (here we assume you already have `testdf` with a column "es" of Spanish sentences)
+# ——————————————————————————————
+# 1. Copy your input DataFrame
+#    (must have columns "es" and "en")
+# ——————————————————————————————
 df = testdf.copy()
 
-# 2. Define your models in a dict
-models = {
-    'madlad400': base_madlad_translate,
-    'helsinki': base_helsinki_translate,
-}
+# ——————————————————————————————
+# 2. Generate both model translations
+# ——————————————————————————————
+df['base_madlad400_translation'] = df['es'].apply(base_madlad_translate)
+df['base_helsinki_translation'] = df['es'].apply(base_helsinki_translate)
 
-# 3. Run timing loops
-#    We'll record, for each sentence, how long each model takes.
-for model_name, fn in models.items():
-    times = []
-    for text in df['es']:
-        t0 = time.time()
-        _ = fn(text)           # call the translation
-        t1 = time.time()
-        times.append(t1 - t0)
-    df[f'{model_name}_time'] = times
+# ——————————————————————————————
+# 3. Time each call (run1 = madlad400, run2 = helsinki)
+# ——————————————————————————————
+run1_times = []
+run2_times = []
 
-# 4. Compute averages
+for text in df['es']:
+    t0 = time.time()
+    _ = base_madlad_translate(text)
+    run1_times.append(time.time() - t0)
+
+    t0 = time.time()
+    _ = base_helsinki_translate(text)
+    run2_times.append(time.time() - t0)
+
+df['run1_time'] = run1_times
+df['run2_time'] = run2_times
+
+# ——————————————————————————————
+# 4. Compute average response times
+# ——————————————————————————————
 avg_df = pd.DataFrame({
-    'model': list(models.keys()),
-    'avg_response_time_sec': [
-        df[f'{m}_time'].mean() for m in models
+    'run': ['run1', 'run2'],
+    'avg_time_sec': [
+        df['run1_time'].mean(),
+        df['run2_time'].mean()
     ]
 })
 
-# 5. Write out to Excel with two sheets
+# ——————————————————————————————
+# 5. Export to Excel with two sheets
+# ——————————————————————————————
 with pd.ExcelWriter('response_times.xlsx', engine='openpyxl') as writer:
-    # Sheet1: inputs + per‑sentence timings
-    df[['es'] + [f'{m}_time' for m in models]].to_excel(
+    # Sheet 1: include index, inputs, reference, translations, and timings
+    df.to_excel(
         writer,
         sheet_name='Per_Sentence_Times',
-        index=False
+        columns=[
+            'es',
+            'en',
+            'base_madlad400_translation',
+            'base_helsinki_translation',
+            'run1_time',
+            'run2_time'
+        ],
+        index=True,
+        index_label='Index'
     )
-    # Sheet2: average timing per model
+    # Sheet 2: average times per run
     avg_df.to_excel(
         writer,
         sheet_name='Average_Times',
