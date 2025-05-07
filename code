@@ -1,3 +1,1 @@
-    df["precision"] = [round(min(max(float(x), 0.0), 1.0), 6) for x in res["precision"]]
-    df["recall"]    = [round(min(max(float(x), 0.0), 1.0), 6) for x in res["recall"]]
-    df["f1"]        = [round(min(max(float(x), 0.0), 1.0), 6) for x in res["f1"]]
+conda install pytorch torchvision torchaudio cudatoolkit=11.3 -c pytorch
