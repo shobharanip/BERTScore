@@ -1,1 +1,46 @@
-conda install pytorch torchvision torchaudio cudatoolkit=11.3 -c pytorch
+import time
+import pandas as pd
+
+# 1. Prepare your DataFrame
+#    (here we assume you already have `testdf` with a column "es" of Spanish sentences)
+df = testdf.copy()
+
+# 2. Define your models in a dict
+models = {
+    'madlad400': base_madlad_translate,
+    'helsinki': base_helsinki_translate,
+}
+
+# 3. Run timing loops
+#    We'll record, for each sentence, how long each model takes.
+for model_name, fn in models.items():
+    times = []
+    for text in df['es']:
+        t0 = time.time()
+        _ = fn(text)           # call the translation
+        t1 = time.time()
+        times.append(t1 - t0)
+    df[f'{model_name}_time'] = times
+
+# 4. Compute averages
+avg_df = pd.DataFrame({
+    'model': list(models.keys()),
+    'avg_response_time_sec': [
+        df[f'{m}_time'].mean() for m in models
+    ]
+})
+
+# 5. Write out to Excel with two sheets
+with pd.ExcelWriter('response_times.xlsx', engine='openpyxl') as writer:
+    # Sheet1: inputs + per‑sentence timings
+    df[['es'] + [f'{m}_time' for m in models]].to_excel(
+        writer,
+        sheet_name='Per_Sentence_Times',
+        index=False
+    )
+    # Sheet2: average timing per model
+    avg_df.to_excel(
+        writer,
+        sheet_name='Average_Times',
+        index=False
+    )
