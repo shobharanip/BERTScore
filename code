@@ -2,52 +2,45 @@ import pandas as pd
 from Translation_evaluator import TranslationEvaluator
 
 INPUT_XLSX  = "/appdata/cortex/dev1/shob/your_input.xlsx"
-OUTPUT_XLSX = "/appdata/cortex/dev1/shob/translation_with_metrics.xlsx"
+OUTPUT_XLSX = "/appdata/cortex/dev1/shob/combined_translation_results.xlsx"
 
-# 1) Read every sheet into a dict
-all_sheets: dict[str, pd.DataFrame] = pd.read_excel(
-    INPUT_XLSX, sheet_name=None    # sheet_name=None => dict of all sheets
-)
+# 1) Read all sheets
+all_sheets = pd.read_excel(INPUT_XLSX, sheet_name=None)
 
-# 2) Grab the sheet that actually contains your translations:
-#    (replace "translations" with your real sheet name)
-trans_df = all_sheets["translations"].copy()
+# 2) Pull out your translations DataFrame
+orig = all_sheets["translations"].copy()
 
-# 3) Force the key cols to strings (no more floats/ints!)
-for col in ["en",                            # your reference
-            "base_madlad400_translation",    # model output #1
-            "base_helsinki_translation"]:   # model output #2
-    trans_df[col] = trans_df[col].fillna("").astype(str)
-
-# 4) Plug it into your evaluator
+# 3) Run the evaluator on that sheet
+#    (same forcing-to-str step as before, if needed)
 evaluator = TranslationEvaluator()
-evaluator._data = trans_df      # bypass load_data if it only handles single‑sheet defaults
+evaluator._data = orig
 evaluator.evaluate(
-    prediction_cols = [
-        "base_madlad400_translation",
-        "base_helsinki_translation"
-    ],
-    reference_col   = "en",
-    metrics         = ["BLEU", "ChrF", "ChrF++"],
-    keep_cols       = None       # or omit entirely if you’ve defaulted it to “all”
+    prediction_cols=['base_madlad400_translation','base_helsinki_translation'],
+    reference_col   ='en',
+    metrics         =["BLEU","ChrF","ChrF++"],
+    keep_cols       =None
 )
 
-# 5) Write everything back out: all original sheets + your two result sheets
+# 4) Grab your detailed‐results
+det = evaluator._detailed_results
+
+# 5) Identify _only_ the metric columns (i.e. those not already in orig)
+metrics_only = det.loc[:, det.columns.difference(orig.columns)]
+
+# 6) Concatenate side‐by‐side
+combined = pd.concat(
+    [orig.reset_index(drop=True), metrics_only.reset_index(drop=True)],
+    axis=1
+)
+
+# 7) Write out a single sheet with everything combined
 with pd.ExcelWriter(OUTPUT_XLSX, engine="openpyxl") as writer:
-    # a) copy original sheets
+    combined.to_excel(writer,
+                      sheet_name="Combined Results",
+                      index=False)
+    # (optional) preserve your other sheets unchanged:
     for name, df in all_sheets.items():
-        df.to_excel(writer, sheet_name=name, index=False)
+        if name != "translations":
+            df.to_excel(writer, sheet_name=name, index=False)
 
-    # b) append the new evaluation sheets
-    evaluator._detailed_results.to_excel(
-        writer,
-        sheet_name="Detailed Results",
-        index=False
-    )
-    evaluator._model_metrics.to_excel(
-        writer,
-        sheet_name="Model Metrics",
-        index=False
-    )
-
-print("Done — all sheets plus metrics written to", OUTPUT_XLSX)
+print("Wrote combined sheet →", OUTPUT_XLSX)
