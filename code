@@ -1,81 +1,37 @@
-for col in ['en','base_madlad400_translation','base_helsinki_translation']:
-    evaluator._data[col] = evaluator._data[col].fillna("").astype(str)
+import pandas as pd
+from Translation_evaluator import TranslationEvaluator
 
-# 1. load
-evaluator.load_data("…/your_translations.xlsx")
+# 1. Read every sheet into a dict of DataFrames
+input_path = "/appdata/cortex/dev1/shob/your_input.xlsx"
+all_sheets = pd.read_excel(input_path, sheet_name=None)
 
-# 2. grab all the column names
-all_cols = evaluator._data.columns.tolist()
+# 2. Pick out the sheet(s) that actually have your translations
+#    (e.g. assume it’s called "translations")
+translations_df = all_sheets["translations"]
 
-# 3. use them as keep_cols
+# 3. Run your evaluator on that DataFrame
+evaluator = TranslationEvaluator()
+evaluator._data = translations_df  # bypass load_data if it only handles one sheet
 evaluator.evaluate(
-    prediction_cols=[ 'base_madlad400_translation',
-                      'base_helsinki_translation' ],
-    reference_col   = 'en',
-    metrics         = ["BLEU","ChrF","ChrF++"],
-    keep_cols       = all_cols
+    prediction_cols=['base_madlad400_translation','base_helsinki_translation'],
+    reference_col   ='en',
+    metrics         =["BLEU","ChrF","ChrF++"],
+    # omit keep_cols or use None so it pulls *all* columns from this sheet
 )
 
-import time
-import pandas as pd
+# 4. Write **all** original sheets + your two new sheets to a fresh file
+output_path = "/appdata/cortex/dev1/shob/translation_results_with_latencies.xlsx"
+with pd.ExcelWriter(output_path, engine="openpyxl") as writer:
+    # 4a) copy every original sheet
+    for sheet_name, df in all_sheets.items():
+        df.to_excel(writer, sheet_name=sheet_name, index=False)
 
-# 1. Copy your input DataFrame (must have columns "es" and "en")
-df = testdf.copy()
+    # 4b) dump your evaluation outputs
+    evaluator._detailed_results.to_excel(writer,
+                                         sheet_name="Detailed Results",
+                                         index=False)
+    evaluator._model_metrics.to_excel(writer,
+                                      sheet_name="Model Metrics",
+                                      index=False)
 
-# 2. Generate each model’s translation once
-df['base_madlad400_translation'] = df['es'].apply(base_madlad_translate)
-df['base_helsinki_translation'] = df['es'].apply(base_helsinki_translate)
-
-# 3. Time each model for 10 runs
-models = {
-    'madlad400': base_madlad_translate,
-    'helsinki':  base_helsinki_translate
-}
-
-for model_name, fn in models.items():
-    for run in range(1, 11):
-        times = []
-        for text in df['es']:
-            t0 = time.time()
-            _ = fn(text)
-            times.append(time.time() - t0)
-        df[f'{model_name}_run{run}_time'] = times
-
-# 4. Append a summary “average” row at the bottom of the translations sheet
-#    Leave text & translation columns blank, fill only timing columns
-avg_row = {col: '' for col in df.columns}
-for model_name in models:
-    for run in range(1, 11):
-        col = f'{model_name}_run{run}_time'
-        avg_row[col] = df[col].mean()
-df.loc['average'] = avg_row
-
-# 5. Build the per‑run latency table, then append overall average row
-runs = [f'run{r}' for r in range(1, 11)]
-avg_df = pd.DataFrame({
-    'run':       runs,
-    'madlad400': [df[f'madlad400_{r}_time'].mean() for r in runs],
-    'helsinki':  [df[f'helsinki_{r}_time'].mean()  for r in runs]
-})
-# overall average
-avg_df.loc[len(avg_df)] = [
-    'average',
-    avg_df['madlad400'].mean(),
-    avg_df['helsinki'].mean()
-]
-
-# 6. Write out to Excel with renamed sheets
-with pd.ExcelWriter('response_times_10runs.xlsx', engine='openpyxl') as writer:
-    # Sheet 1: per‑sentence translations + all 10 run times + bottom “average” row
-    df.to_excel(
-        writer,
-        sheet_name='translations',
-        index=True,
-        index_label='Index'
-    )
-    # Sheet 2: per‑run latencies + “average” row
-    avg_df.to_excel(
-        writer,
-        sheet_name='latency',
-        index=False
-    )
+print(f"All sheets + evaluation written to {output_path}")
