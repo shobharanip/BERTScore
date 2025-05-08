@@ -1,7 +1,20 @@
 for col in ['en','base_madlad400_translation','base_helsinki_translation']:
     evaluator._data[col] = evaluator._data[col].fillna("").astype(str)
 
+# 1. load
+evaluator.load_data("…/your_translations.xlsx")
 
+# 2. grab all the column names
+all_cols = evaluator._data.columns.tolist()
+
+# 3. use them as keep_cols
+evaluator.evaluate(
+    prediction_cols=[ 'base_madlad400_translation',
+                      'base_helsinki_translation' ],
+    reference_col   = 'en',
+    metrics         = ["BLEU","ChrF","ChrF++"],
+    keep_cols       = all_cols
+)
 
 import time
 import pandas as pd
