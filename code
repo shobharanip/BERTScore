@@ -23,37 +23,35 @@ for model_name, fn in models.items():
             times.append(time.time() - t0)
         df[f'{model_name}_run{run}_time'] = times
 
-# 4. Build the “average” sheet:
-#    – rows = run1…run10 + “average”
-#    – cols = madlad400, helsinki
-runs = range(1, 11)
-avg_df = pd.DataFrame(
-    { model: [ df[f'{model}_run{r}_time'].mean() for r in runs ]
-      for model in models },
-    index=[f'run{r}' for r in runs]
-)
-avg_df.loc['average'] = avg_df.mean()
+# 4. Append a summary “average” row at the bottom of Sheet 1
+#    Leave text & translation columns blank, fill only timing columns
+avg_row = {col: '' for col in df.columns}
+for model_name in models:
+    for run in range(1, 11):
+        col = f'{model_name}_run{run}_time'
+        avg_row[col] = df[col].mean()
+df.loc['average'] = avg_row
 
-# 5. Write out to Excel
-with pd.ExcelWriter('response_times_10runs.xlsx', engine='openpyxl') as writer:
-    # Sheet 1: per‑sentence inputs, translations, and all 10 run times
+# 5. Build the average‐per‐run table for Sheet 2
+runs = [f'run{r}' for r in range(1, 11)]
+avg_df = pd.DataFrame({
+    'run':       runs,
+    'madlad400': [df[f'madlad400_run{r}_time'].mean() for r in range(1, 11)],
+    'helsinki':  [df[f'helsinki_run{r}_time'].mean()  for r in range(1, 11)]
+})
+
+# 6. Write out to Excel with two sheets
+with pd.ExcelWriter('response_times_10runs_with_average.xlsx', engine='openpyxl') as writer:
+    # Sheet 1: per‑sentence + all 10 run times + bottom “average” row
     df.to_excel(
         writer,
         sheet_name='Per_Sentence_Times',
-        columns=[
-            'es', 'en',
-            'base_madlad400_translation',
-            'base_helsinki_translation'
-        ] +
-        [f'{model}_run{r}_time' for model in models for r in runs],
         index=True,
         index_label='Index'
     )
-
-    # Sheet 2: average time per run and overall average
+    # Sheet 2: average time per run
     avg_df.to_excel(
         writer,
         sheet_name='Average_Times',
-        index=True,
-        index_label='run'
+        index=False
     )
