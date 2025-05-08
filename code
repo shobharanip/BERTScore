@@ -8,11 +8,13 @@ df = testdf.copy()
 df['base_madlad400_translation'] = df['es'].apply(base_madlad_translate)
 df['base_helsinki_translation'] = df['es'].apply(base_helsinki_translate)
 
-# 3. For each model, do 10 timing runs
-for model_name, fn in [
-    ('madlad400', base_madlad_translate),
-    ('helsinki',  base_helsinki_translate)
-]:
+# 3. Time each model for 10 runs
+models = {
+    'madlad400': base_madlad_translate,
+    'helsinki':  base_helsinki_translate
+}
+
+for model_name, fn in models.items():
     for run in range(1, 11):
         times = []
         for text in df['es']:
@@ -21,18 +23,20 @@ for model_name, fn in [
             times.append(time.time() - t0)
         df[f'{model_name}_run{run}_time'] = times
 
-# 4. Compute each model’s average over its 10 runs
-avg_df = pd.DataFrame([
-    {
-      'model': model_name,
-      'avg_time_sec': df[[f'{model_name}_run{r}_time' for r in range(1,11)]].values.mean()
-    }
-    for model_name in ['madlad400', 'helsinki']
-])
+# 4. Build the “average” sheet:
+#    – rows = run1…run10 + “average”
+#    – cols = madlad400, helsinki
+runs = range(1, 11)
+avg_df = pd.DataFrame(
+    { model: [ df[f'{model}_run{r}_time'].mean() for r in runs ]
+      for model in models },
+    index=[f'run{r}' for r in runs]
+)
+avg_df.loc['average'] = avg_df.mean()
 
-# 5. Write to Excel: Sheet1 = per‑sentence times; Sheet2 = averages
-with pd.ExcelWriter('response_times_10x2.xlsx', engine='openpyxl') as writer:
-    # Sheet 1
+# 5. Write out to Excel
+with pd.ExcelWriter('response_times_10runs.xlsx', engine='openpyxl') as writer:
+    # Sheet 1: per‑sentence inputs, translations, and all 10 run times
     df.to_excel(
         writer,
         sheet_name='Per_Sentence_Times',
@@ -41,14 +45,15 @@ with pd.ExcelWriter('response_times_10x2.xlsx', engine='openpyxl') as writer:
             'base_madlad400_translation',
             'base_helsinki_translation'
         ] +
-        [f'madlad400_run{r}_time'  for r in range(1,11)] +
-        [f'helsinki_run{r}_time'   for r in range(1,11)],
+        [f'{model}_run{r}_time' for model in models for r in runs],
         index=True,
         index_label='Index'
     )
-    # Sheet 2
+
+    # Sheet 2: average time per run and overall average
     avg_df.to_excel(
         writer,
         sheet_name='Average_Times',
-        index=False
+        index=True,
+        index_label='run'
     )
