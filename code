@@ -1,71 +1,31 @@
-import pandas as pd
-from Translation_evaluator import TranslationEvaluator
+What is MADLAD?
 
-# ─── CONFIG ────────────────────────────────────────────────────────────────────
-INPUT_XLSX        = "/appdata/cortex/dev1/shob/your_input.xlsx"
-TRANSLATION_SHEET = "translations"   # name of the sheet containing your sentences
-OUTPUT_XLSX       = "/appdata/cortex/dev1/shob/combined_translation_results.xlsx"
+MADLAD-400 (short for Multilingual And Diverse Language Annotated Dataset) is a massive multilingual dataset created by Meta AI to train large-scale translation and language models. It’s part of their efforts to build open, massively multilingual models.
+	•	Size: Over 400 languages
+	•	Purpose: Train models like SeamlessM4T, M2M-100, etc.
+	•	Format: Often used for speech and text translation, language modeling, etc.
 
-REFERENCE_COL     = "en"
-PREDICTION_COLS   = [
-    "base_madlad400_translation",
-    "base_helsinki_translation"
-]
-METRICS           = ["BLEU", "ChrF", "ChrF++"]
-# ────────────────────────────────────────────────────────────────────────────────
+If you’re downloading or processing it (e.g., via Hugging Face datasets or Meta’s tools), it can take a long time because:
+	•	It’s very large (hundreds of GBs).
+	•	Some subsets include speech, text, and alignments.
+	•	Might require decompression and pre-processing.
+	•	Speed depends on your internet, disk I/O, and RAM.
 
-# 1) Read all sheets into a dict
-all_sheets: dict[str,pd.DataFrame] = pd.read_excel(
-    INPUT_XLSX, sheet_name=None
-)
+⸻
 
-# 2) Extract your translations sheet
-orig_df = all_sheets.get(TRANSLATION_SHEET)
-if orig_df is None:
-    raise ValueError(f"Sheet '{TRANSLATION_SHEET}' not found in {INPUT_XLSX}")
+2. What is Helsinki?
 
-# 3) Ensure reference & predictions are strings
-for col in [REFERENCE_COL] + PREDICTION_COLS:
-    if col not in orig_df.columns:
-        raise ValueError(f"Column '{col}' not found in sheet '{TRANSLATION_SHEET}'")
-    orig_df[col] = orig_df[col].fillna("").astype(str)
+Helsinki-NLP is a group from the University of Helsinki that created a massive set of machine translation models, often called OPUS-MT models. These are:
+	•	Trained using the OPUS corpus (open multilingual parallel data).
+	•	Available on Hugging Face (Helsinki-NLP/opus-mt-xx-yy).
+	•	Lightweight and fast compared to newer LLMs.
+	•	Good for low-resource language translation.
 
-# 4) Run the evaluator
-evaluator = TranslationEvaluator()
-evaluator._data = orig_df.copy()
-evaluator.evaluate(
-    prediction_cols = PREDICTION_COLS,
-    reference_col   = REFERENCE_COL,
-    metrics         = METRICS,
-    keep_cols       = None   # None → keep *all* original columns
-)
+⸻
 
-# 5) Build the combined results (original + row‑level metrics)
-det          = evaluator._detailed_results
-metrics_only = det.loc[:, det.columns.difference(orig_df.columns)]
-combined_df  = pd.concat(
-    [orig_df.reset_index(drop=True),
-     metrics_only.reset_index(drop=True)],
-    axis=1
-)
+3. Why is MADLAD taking so long?
 
-# 6) Write out: Combined Results, Model Metrics, and all original sheets
-with pd.ExcelWriter(OUTPUT_XLSX, engine="openpyxl") as writer:
-    # a) Combined translations + detailed scores
-    combined_df.to_excel(writer,
-                         sheet_name="Combined Results",
-                         index=False)
-
-    # b) Summary of model‐level metrics
-    evaluator._model_metrics.to_excel(writer,
-                                      sheet_name="Model Metrics",
-                                      index=False)
-
-    # c) All other original sheets unchanged
-    for sheet_name, df in all_sheets.items():
-        if sheet_name != TRANSLATION_SHEET:
-            df.to_excel(writer,
-                        sheet_name=sheet_name,
-                        index=False)
-
-print(f"✅ Wrote Combined Results, Model Metrics, and all original sheets to:\n   {OUTPUT_XLSX}")
+Likely reasons:
+	•	You’re downloading a huge subset (MADLAD has many modalities: speech, text, etc.).
+	•	Multilingual pre-processing is expensive.
+	•	If using datasets.load_dataset(), some scripts dynamically download, extract, and format data, which takes time.
