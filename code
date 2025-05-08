@@ -1,37 +1,53 @@
 import pandas as pd
 from Translation_evaluator import TranslationEvaluator
 
-# 1. Read every sheet into a dict of DataFrames
-input_path = "/appdata/cortex/dev1/shob/your_input.xlsx"
-all_sheets = pd.read_excel(input_path, sheet_name=None)
+INPUT_XLSX  = "/appdata/cortex/dev1/shob/your_input.xlsx"
+OUTPUT_XLSX = "/appdata/cortex/dev1/shob/translation_with_metrics.xlsx"
 
-# 2. Pick out the sheet(s) that actually have your translations
-#    (e.g. assume it’s called "translations")
-translations_df = all_sheets["translations"]
-
-# 3. Run your evaluator on that DataFrame
-evaluator = TranslationEvaluator()
-evaluator._data = translations_df  # bypass load_data if it only handles one sheet
-evaluator.evaluate(
-    prediction_cols=['base_madlad400_translation','base_helsinki_translation'],
-    reference_col   ='en',
-    metrics         =["BLEU","ChrF","ChrF++"],
-    # omit keep_cols or use None so it pulls *all* columns from this sheet
+# 1) Read every sheet into a dict
+all_sheets: dict[str, pd.DataFrame] = pd.read_excel(
+    INPUT_XLSX, sheet_name=None    # sheet_name=None => dict of all sheets
 )
 
-# 4. Write **all** original sheets + your two new sheets to a fresh file
-output_path = "/appdata/cortex/dev1/shob/translation_results_with_latencies.xlsx"
-with pd.ExcelWriter(output_path, engine="openpyxl") as writer:
-    # 4a) copy every original sheet
-    for sheet_name, df in all_sheets.items():
-        df.to_excel(writer, sheet_name=sheet_name, index=False)
+# 2) Grab the sheet that actually contains your translations:
+#    (replace "translations" with your real sheet name)
+trans_df = all_sheets["translations"].copy()
 
-    # 4b) dump your evaluation outputs
-    evaluator._detailed_results.to_excel(writer,
-                                         sheet_name="Detailed Results",
-                                         index=False)
-    evaluator._model_metrics.to_excel(writer,
-                                      sheet_name="Model Metrics",
-                                      index=False)
+# 3) Force the key cols to strings (no more floats/ints!)
+for col in ["en",                            # your reference
+            "base_madlad400_translation",    # model output #1
+            "base_helsinki_translation"]:   # model output #2
+    trans_df[col] = trans_df[col].fillna("").astype(str)
 
-print(f"All sheets + evaluation written to {output_path}")
+# 4) Plug it into your evaluator
+evaluator = TranslationEvaluator()
+evaluator._data = trans_df      # bypass load_data if it only handles single‑sheet defaults
+evaluator.evaluate(
+    prediction_cols = [
+        "base_madlad400_translation",
+        "base_helsinki_translation"
+    ],
+    reference_col   = "en",
+    metrics         = ["BLEU", "ChrF", "ChrF++"],
+    keep_cols       = None       # or omit entirely if you’ve defaulted it to “all”
+)
+
+# 5) Write everything back out: all original sheets + your two result sheets
+with pd.ExcelWriter(OUTPUT_XLSX, engine="openpyxl") as writer:
+    # a) copy original sheets
+    for name, df in all_sheets.items():
+        df.to_excel(writer, sheet_name=name, index=False)
+
+    # b) append the new evaluation sheets
+    evaluator._detailed_results.to_excel(
+        writer,
+        sheet_name="Detailed Results",
+        index=False
+    )
+    evaluator._model_metrics.to_excel(
+        writer,
+        sheet_name="Model Metrics",
+        index=False
+    )
+
+print("Done — all sheets plus metrics written to", OUTPUT_XLSX)
