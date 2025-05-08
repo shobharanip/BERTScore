@@ -1,3 +1,8 @@
+for col in ['en','base_madlad400_translation','base_helsinki_translation']:
+    evaluator._data[col] = evaluator._data[col].fillna("").astype(str)
+
+
+
 import time
 import pandas as pd
 
