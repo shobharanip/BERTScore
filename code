@@ -23,7 +23,7 @@ for model_name, fn in models.items():
             times.append(time.time() - t0)
         df[f'{model_name}_run{run}_time'] = times
 
-# 4. Append a summary “average” row at the bottom of Sheet 1
+# 4. Append a summary “average” row at the bottom of the translations sheet
 #    Leave text & translation columns blank, fill only timing columns
 avg_row = {col: '' for col in df.columns}
 for model_name in models:
@@ -32,26 +32,32 @@ for model_name in models:
         avg_row[col] = df[col].mean()
 df.loc['average'] = avg_row
 
-# 5. Build the average‐per‐run table for Sheet 2
+# 5. Build the per‑run latency table, then append overall average row
 runs = [f'run{r}' for r in range(1, 11)]
 avg_df = pd.DataFrame({
     'run':       runs,
-    'madlad400': [df[f'madlad400_run{r}_time'].mean() for r in range(1, 11)],
-    'helsinki':  [df[f'helsinki_run{r}_time'].mean()  for r in range(1, 11)]
+    'madlad400': [df[f'madlad400_{r}_time'].mean() for r in runs],
+    'helsinki':  [df[f'helsinki_{r}_time'].mean()  for r in runs]
 })
+# overall average
+avg_df.loc[len(avg_df)] = [
+    'average',
+    avg_df['madlad400'].mean(),
+    avg_df['helsinki'].mean()
+]
 
-# 6. Write out to Excel with two sheets
-with pd.ExcelWriter('response_times_10runs_with_average.xlsx', engine='openpyxl') as writer:
-    # Sheet 1: per‑sentence + all 10 run times + bottom “average” row
+# 6. Write out to Excel with renamed sheets
+with pd.ExcelWriter('response_times_10runs.xlsx', engine='openpyxl') as writer:
+    # Sheet 1: per‑sentence translations + all 10 run times + bottom “average” row
     df.to_excel(
         writer,
-        sheet_name='Per_Sentence_Times',
+        sheet_name='translations',
         index=True,
         index_label='Index'
     )
-    # Sheet 2: average time per run
+    # Sheet 2: per‑run latencies + “average” row
     avg_df.to_excel(
         writer,
-        sheet_name='Average_Times',
+        sheet_name='latency',
         index=False
     )
