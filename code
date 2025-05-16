@@ -1,64 +1,186 @@
+import time
+import pandas as pd
+from sacrebleu import sentence_bleu, sentence_chrf
+from typing import Union, List, Optional, Dict
+import warnings
+from pathlib import Path
+from sacrebleu.metrics import CHRF
+import os
 
-⸻
+class TranslationEvaluator:
+    """
+    - Load translations (CSV or Excel)
+    - Compute sentence‑level metrics: BLEU, ChrF, ChrF++
+    - Compute model‑level metrics as the average of sentence scores
+    - Export detailed & model metrics to Excel
+    """
+    def __init__(
+        self,
+        output_file: Union[str, Path] = "output_data.xlsx"
+    ):
+        os.environ["TRANSFORMERS_CACHE"] = r"C:/Users/ZKC7H0U/Documents/4. BERT score/roberta-large"
+        warnings.simplefilter("ignore")
+        self._data             = None
+        self._detailed_results = None
+        self._model_metrics    = None
+        self._output_file      = Path(output_file)
+        self._chrff            = CHRF(word_order=2)
 
-1. Future improvements for latency (in models like MADLAD/BERTScore)
+    def load_data(self, file_path: Union[str, Path]) -> None:
+        """Load input CSV or Excel into a DataFrame."""
+        file_path = Path(file_path)
+        if file_path.suffix == ".csv":
+            self._data = pd.read_csv(file_path)
+        elif file_path.suffix in (".xls", ".xlsx"):
+            self._data = pd.read_excel(file_path)
+        else:
+            raise ValueError(f"Unsupported file type: {file_path.suffix}")
 
-Latency = how long it takes for a model to give results.
+    def evaluate(
+        self,
+        prediction_cols: List[str],
+        reference_col:   str               = "en",
+        metrics:         List[str]         = ["BLEU", "ChrF", "ChrF++"],
+        keep_cols:       Optional[List[str]] = None
+    ) -> None:
+        """
+        Run the full evaluation:
+          1) Validate requested columns
+          2) Compute sentence‑level metrics
+          3) Compute model‑level metrics as averages of those sentence scores
+          4) Write both sheets to Excel
+        """
+        if self._data is None:
+            raise ValueError("No data loaded. Call load_data() first.")
 
-Future improvements may include:
-	•	Model quantization: Make models smaller/faster by using lower precision (e.g., INT8).
-	•	Distillation: Train smaller models from big ones that work nearly as well (e.g., TinyBERT).
-	•	Batch processing and caching: Faster execution for repeated tasks.
-	•	On-device inference: Run models on edge devices to avoid network delay.
-	•	Better hardware use: Use optimized GPU/TPU inference with libraries like ONNX or TensorRT.
+        keep_cols = keep_cols or []
+        if reference_col not in keep_cols:
+            keep_cols.insert(0, reference_col)
 
-⸻
+        self._validate_columns(reference_col, prediction_cols, keep_cols)
+        self._compute_detailed_metrics(reference_col, prediction_cols, metrics, keep_cols)
+        self._compute_model_metrics(prediction_cols, metrics)
+        self._generate_report()
 
-2. Why rescale with baseline in BERTScore?
+    def _validate_columns(
+        self,
+        reference_col:   str,
+        prediction_cols: List[str],
+        keep_cols:       List[str]
+    ) -> None:
+        """Ensure all requested columns exist in the DataFrame."""
+        required = {reference_col} | set(prediction_cols) | set(keep_cols)
+        missing  = [c for c in required if c not in self._data.columns]
+        if missing:
+            raise ValueError(f"Missing columns in data: {missing}")
 
-BERTScore compares similarity between predicted and reference sentences using BERT embeddings.
+    def _compute_detailed_metrics(
+        self,
+        reference_col:   str,
+        prediction_cols: List[str],
+        metrics:         List[str],
+        keep_cols:       List[str]
+    ) -> None:
+        """Compute BLEU, ChrF, ChrF++ for each sentence."""
+        # Start from the subset of columns to keep
+        df = self._data[keep_cols].copy()
 
-Rescaling with baseline means:
-	•	You adjust raw similarity scores using precomputed baseline values (based on random sentence pairs).
-	•	This helps make scores more comparable across languages or different sentence lengths.
-	•	Without rescaling, scores might be misleading due to BERT’s natural biases.
+        for pred in prediction_cols:
+            if "BLEU" in metrics:
+                df[f"{pred} BLEU"] = df.apply(
+                    lambda row: sentence_bleu(
+                        row[pred],
+                        references=[row[reference_col]]
+                    ).score,
+                    axis=1
+                )
+            if "ChrF" in metrics:
+                df[f"{pred} ChrF"] = df.apply(
+                    lambda row: sentence_chrf(
+                        row[pred],
+                        references=[row[reference_col]]
+                    ).score,
+                    axis=1
+                )
+            if "ChrF++" in metrics:
+                df[f"{pred} ChrF++"] = df.apply(
+                    lambda row: self._chrff.sentence_score(
+                        row[pred],
+                        references=[row[reference_col]]
+                    ).score,
+                    axis=1
+                )
 
-Simple analogy: Like adjusting your test score based on the difficulty level of the exam.
+        # Re‑order: keep_cols, then for each pred its metrics
+        cols = keep_cols.copy()
+        for pred in prediction_cols:
+            for m in metrics:
+                cols.append(f"{pred} {m}")
+        self._detailed_results = df[cols]
 
-⸻
+    def _compute_model_metrics(
+        self,
+        prediction_cols: List[str],
+        metrics:         List[str]
+    ) -> None:
+        """
+        Compute model‑level metrics as the average of the
+        per‑sentence scores in self._detailed_results.
+        """
+        results: List[Dict[str, float]] = []
+        for pred in prediction_cols:
+            row: Dict[str, float] = {"Model": pred}
+            for m in metrics:
+                col_name = f"{pred} {m}"
+                if col_name in self._detailed_results:
+                    row[m] = self._detailed_results[col_name].mean()
+            results.append(row)
 
-3. What is number of layer 17 in BERTScore?
+        self._model_metrics = pd.DataFrame(results)
 
-When using BERT, it has multiple layers (usually 12 for BERT-base, 24 for BERT-large).
-	•	Layer 17 is one of the deeper layers of a BERT-large or RoBERTa-large model.
-	•	BERTScore often uses embeddings from a specific layer to calculate sentence similarity.
-	•	Layers 8–17 are common choices because deeper layers better understand meaning, but too deep can overfit.
+    def _generate_report(self) -> None:
+        """Write detailed & model metrics to an Excel workbook."""
+        out = self._output_file
+        out.parent.mkdir(parents=True, exist_ok=True)
 
-⸻
+        with pd.ExcelWriter(out, engine="xlsxwriter") as writer:
+            # Detailed per‐sentence scores
+            self._detailed_results.to_excel(
+                writer,
+                sheet_name="Detailed metrics",
+                index=False
+            )
 
-4. Why lang=en in BERTScore?
+            # Model‐level averages
+            self._model_metrics.to_excel(
+                writer,
+                sheet_name="Model metrics",
+                index=False
+            )
 
-This tells BERTScore to:
-	•	Use a language-specific model (like English RoBERTa for lang=en).
-	•	Apply tokenization and processing that’s optimized for English.
-	•	Helps get more accurate similarity scores than using a multilingual model.
+            # Beautify the Model metrics sheet
+            book = writer.book
+            sheet = writer.sheets["Model metrics"]
+            max_row, max_col = self._model_metrics.shape
+            headers = [{"header": c} for c in self._model_metrics.columns]
+            sheet.add_table(0, 0, max_row, max_col - 1, {
+                "columns": headers,
+                "style":   "Table Style Medium 9",
+                "name":    "ModelMetrics"
+            })
+            for idx, col in enumerate(self._model_metrics.columns):
+                width = max(
+                    self._model_metrics[col].astype(str).map(len).max(),
+                    len(col)
+                ) + 2
+                sheet.set_column(idx, idx, width)
 
-⸻
+        print(f"Report saved to {out.resolve()}")
 
-5. Why use RoBERTa as the language model in BERTScore?
+    def get_detailed_results(self) -> pd.DataFrame:
+        """Return the detailed per‐sentence DataFrame."""
+        return self._detailed_results.copy()
 
-RoBERTa is a stronger version of BERT:
-	•	Trained longer and with more data.
-	•	Better performance in many tasks.
-	•	Used in BERTScore because it gives richer embeddings, improving score quality.
-
-⸻
-
-6. Future plans for models like BERTScore?
-
-Here are some likely directions:
-	•	Multilingual improvements: Better support for low-resource languages.
-	•	Faster inference: Using smaller models or ONNX for real-time scoring.
-	•	Robustness: Make scores more stable across different languages and sentence lengths.
-	•	Task-specific tuning: Adapt BERTScore to work better on translation, summarization, etc.
-	•	Explainability: Show which words contribute most to the score.
+    def get_model_metrics(self) -> pd.DataFrame:
+        """Return the model‐level averages DataFrame."""
+        return self._model_metrics.copy()
