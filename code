@@ -1,148 +1,200 @@
-import time
+import os
+import tempfile
 import pandas as pd
-from sacrebleu import sentence_bleu, sentence_chrf
-from sacrebleu.metrics import CHRF
-from typing import Union, List, Optional, Dict
-from pathlib import Path
-import warnings, os
+from fastapi import FastAPI, HTTPException, UploadFile, File
+from fastapi.responses import FileResponse
+from pydantic import BaseModel
+import evaluate   # picks up your local bertscore.py
+import traceback
 
-class TranslationEvaluator:
-    """
-    - Load translations (CSV or Excel)
-    - Compute sentence‑level metrics: BLEU, ChrF, ChrF++
-    - Compute model‑level metrics as the average of sentence scores
-    - Export both to an Excel workbook
-    """
-    def __init__(self, output_file: Union[str, Path]="output_data.xlsx"):
-        os.environ["TRANSFORMERS_CACHE"] = r"C:/Users/.../roberta-large"
-        warnings.simplefilter("ignore")
-        self._data             = None
-        self._detailed_results = None
-        self._model_metrics    = None
-        self._output_file      = Path(output_file)
-        self._chrff            = CHRF(word_order=2)
+# ─── APP DEFINITION ────────────────────────────────────────────────────────────
 
-    def load_data(self, file_path: Union[str, Path]) -> None:
-        file_path = Path(file_path)
-        if file_path.suffix == ".csv":
-            self._data = pd.read_csv(file_path)
-        elif file_path.suffix in (".xls", ".xlsx"):
-            self._data = pd.read_excel(file_path)
-        else:
-            raise ValueError(f"Unsupported file type: {file_path.suffix}")
+app = FastAPI(
+    title="RoBERTa‑Large BERTScore API",
+    description="API for calculating BERTScore between reference and candidate texts",
+    version="1.0.0"
+)
 
-    def evaluate(
-        self,
-        prediction_cols: List[str],
-        reference_col:   str               = "en",
-        metrics:         List[str]         = ["BLEU","ChrF","ChrF++"],
-        keep_cols:       Optional[List[str]] = None
-    ) -> None:
-        if self._data is None:
-            raise ValueError("No data loaded. Call load_data() first.")
+# ─── MODEL & DEVICE ────────────────────────────────────────────────────────────
 
-        # 1) filter out any prediction_cols not actually in your DataFrame
-        available = [c for c in prediction_cols if c in self._data.columns]
-        missing   = set(prediction_cols) - set(available)
-        if missing:
-            print(f"⚠️  Warning: these prediction columns were not found and will be skipped: {missing}")
-        prediction_cols = available
-        if not prediction_cols:
-            raise ValueError("No valid prediction columns left after filtering.")
+MODEL_PATH = os.getenv(
+    "BERT",
+    "/appdata/cortex/dev4/shared/libs/huggingface/roberta-large"
+)
+DEVICE = "cuda" if os.environ.get("CUDA_VISIBLE_DEVICES") else "cpu"
 
-        # 2) build keep_cols list
-        keep = keep_cols or []
-        if reference_col not in keep:
-            keep.insert(0, reference_col)
+# ─── LOAD LOCAL METRIC ─────────────────────────────────────────────────────────
 
-        # 3) validate that ref & keep are in the data
-        req = {reference_col} | set(keep)
-        not_found = [c for c in req if c not in self._data.columns]
-        if not_found:
-            raise ValueError(f"Missing required columns: {not_found}")
+try:
+    scorer = evaluate.load("bertscore")
+    print("Loaded local bertscore metric")
+except Exception as e:
+    print("Failed to load bertscore metric:", e)
+    scorer = None
 
-        # 4) compute everything
-        self._compute_detailed_metrics(reference_col, prediction_cols, metrics, keep)
-        self._compute_model_metrics   (prediction_cols, metrics)
-        self._generate_report()
+# ─── REQUEST / RESPONSE MODELS ─────────────────────────────────────────────────
 
-    def _compute_detailed_metrics(
-        self,
-        reference_col:   str,
-        prediction_cols: List[str],
-        metrics:         List[str],
-        keep_cols:       List[str]
-    ):
-        df = self._data[keep_cols].copy()
-        for pred in prediction_cols:
-            if "BLEU" in metrics:
-                df[f"{pred} BLEU"] = df.apply(
-                    lambda r: sentence_bleu(r[pred], references=[r[reference_col]]).score
-                              if pd.notna(r[pred]) and r[pred].strip()
-                              else 0.0,
-                    axis=1
-                )
-            if "ChrF" in metrics:
-                df[f"{pred} ChrF"] = df.apply(
-                    lambda r: sentence_chrf(r[pred], references=[r[reference_col]]).score
-                              if pd.notna(r[pred]) and r[pred].strip()
-                              else 0.0,
-                    axis=1
-                )
-            if "ChrF++" in metrics:
-                df[f"{pred} ChrF++"] = df.apply(
-                    lambda r: self._chrff.sentence_score(r[pred], references=[r[reference_col]]).score
-                              if pd.notna(r[pred]) and r[pred].strip()
-                              else 0.0,
-                    axis=1
-                )
+class ScoreRequest(BaseModel):
+    reference: list[str]
+    candidate: list[str]
 
-        # reorder: keep_cols, then each pred's metrics
-        cols = keep_cols.copy()
-        for p in prediction_cols:
-            for m in metrics:
-                cols.append(f"{p} {m}")
-        self._detailed_results = df[cols]
+class ScoreResponse(BaseModel):
+    precision: list[float]
+    recall:    list[float]
+    f1:        list[float]
+    model_type: str = "roberta-large"
+    version:    str = "0.3.12"
 
-    def _compute_model_metrics(
-        self,
-        prediction_cols: List[str],
-        metrics:         List[str]
-    ):
-        results = []
-        for pred in prediction_cols:
-            row = {"Model": pred}
-            for m in metrics:
-                col = f"{pred} {m}"
-                if col in self._detailed_results:
-                    row[m] = self._detailed_results[col].mean()
-            results.append(row)
-        self._model_metrics = pd.DataFrame(results)
+# ─── HEALTHCHECK ───────────────────────────────────────────────────────────────
 
-    def _generate_report(self):
-        out = self._output_file
-        out.parent.mkdir(exist_ok=True, parents=True)
-        with pd.ExcelWriter(out, engine="xlsxwriter") as writer:
-            self._detailed_results.to_excel(writer, sheet_name="Detailed metrics", index=False)
-            self._model_metrics   .to_excel(writer, sheet_name="Model metrics",    index=False)
+@app.get("/")
+async def health_check():
+    return {
+        "status": "healthy" if scorer else "failed",
+        "model":  MODEL_PATH,
+        "device": DEVICE
+    }
 
-            wb    = writer.book
-            sheet = writer.sheets["Model metrics"]
-            r, c  = self._model_metrics.shape
-            headers = [{"header":x} for x in self._model_metrics.columns]
-            sheet.add_table(0, 0, r, c-1, {
-                "columns": headers,
-                "style":   "Table Style Medium 9",
-                "name":    "ModelMetrics"
-            })
-            for idx, colname in enumerate(self._model_metrics.columns):
-                w = max(self._model_metrics[colname].astype(str).map(len).max(), len(colname)) + 2
-                sheet.set_column(idx, idx, w)
+# ─── SINGLE‑PAIR SCORING ───────────────────────────────────────────────────────
 
-        print(f"Report saved to {out.resolve()}")
+@app.post("/bertscore/", response_model=ScoreResponse)
+async def calculate_score(request: ScoreRequest):
+    if scorer is None:
+        raise HTTPException(500, "Metric failed to load")
+    if len(request.reference) != len(request.candidate):
+        raise HTTPException(400, "reference and candidate must have the same length")
 
-    def get_detailed_results(self) -> pd.DataFrame:
-        return self._detailed_results.copy()
+    try:
+        out = scorer.compute(
+            predictions=[str(request.candidate[0]).strip()],
+            references=[str(request.reference[0]).strip()],
+            model_type=MODEL_PATH,
+            num_layers=17,
+            device=DEVICE,
+            rescale_with_baseline=True,
+            baseline_path="/appdata/cortex/dev4/shared/libs/huggingface/roberta-large/en/roberta-large.tsv",
+            lang="en"
+        )
+        return {
+            "precision": [round(min(max(x, 0.0), 1.0), 6) for x in out["precision"]],
+            "recall":    [round(min(max(x, 0.0), 1.0), 6) for x in out["recall"]],
+            "f1":        [round(min(max(x, 0.0), 1.0), 6) for x in out["f1"]],
+            "model_type": "roberta-large",
+            "version":    "0.3.12"
+        }
+    except Exception as e:
+        print(traceback.format_exc())
+        raise HTTPException(500, str(e))
 
-    def get_model_metrics(self) -> pd.DataFrame:
-        return self._model_metrics.copy()
+# ─── BATCH FROM LOCAL EXCEL ───────────────────────────────────────────────────
+
+@app.get("/batch-local/")
+async def batch_local():
+    if scorer is None:
+        raise HTTPException(500, "Metric failed to load")
+
+    inp = "/appdata/cortex/dev4/shobha/ALLmodels/ivr_h1_all_model_predictions.xlsx"
+    out = "/appdata/cortex/dev4/shobha/ALLmodels/ivr_h1_all_model_predictions_BERT_Score.xlsx"
+
+    if not os.path.exists(inp):
+        raise HTTPException(404, f"Input file not found: {inp}")
+
+    try:
+        df = pd.read_excel(inp)
+    except Exception as e:
+        raise HTTPException(500, f"Could not read Excel: {e}")
+
+    for col in ("reference", "candidate"):
+        if col not in df.columns:
+            raise HTTPException(400, f"Excel must have '{col}' column")
+
+    try:
+        res = scorer.compute(
+            predictions=df["candidate"].apply(lambda x: str(x).strip()).tolist(),
+            references=df["reference"].apply(lambda x: str(x).strip()).tolist(),
+            model_type=MODEL_PATH,
+            num_layers=17,
+            device=DEVICE,
+            rescale_with_baseline=True,
+            baseline_path="/appdata/cortex/dev4/shared/libs/huggingface/roberta-large/en/roberta-large.tsv",
+            lang="en"
+        )
+        df["precision"] = [round(min(max(float(x), 0.0), 1.0), 6) for x in res["precision"]]
+        df["recall"]    = [round(min(max(float(x), 0.0), 1.0), 6) for x in res["recall"]]
+        df["f1"]        = [round(min(max(float(x), 0.0), 1.0), 6) for x in res["f1"]]
+    except Exception as e:
+        raise HTTPException(500, f"Scoring error: {e}")
+
+    try:
+        df.to_excel(out, index=False)
+    except Exception as e:
+        raise HTTPException(500, f"Cannot write Excel: {e}")
+
+    return FileResponse(
+        out,
+        filename=os.path.basename(out),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+
+# ─── BATCH VIA UPLOAD (multi‑candidate support) ─────────────────────────────────
+
+@app.post("/batch-bert/")
+async def batch_bert(file: UploadFile = File()):
+    if scorer is None:
+        raise HTTPException(500, "Metric failed to load")
+    if not file.filename.lower().endswith((".xls", ".xlsx")):
+        raise HTTPException(400, "Upload an .xls or .xlsx file")
+
+    try:
+        df = pd.read_excel(file.file)
+    except Exception as e:
+        raise HTTPException(400, f"Cannot read Excel: {e}")
+
+    # must have exactly one reference column
+    if "reference" not in df.columns:
+        raise HTTPException(400, "Excel must have a 'reference' column")
+
+    # detect all candidate columns (candidate1…candidate10)
+    candidate_cols = [c for c in df.columns if c.lower().startswith("candidate")]
+    if not candidate_cols:
+        raise HTTPException(400, "Excel must have at least one 'candidateX' column")
+
+    # prepare references once
+    references = df["reference"].apply(lambda x: str(x).strip()).tolist()
+
+    try:
+        for cand in candidate_cols:
+            preds = df[cand].apply(lambda x: str(x).strip()).tolist()
+            out = scorer.compute(
+                predictions=preds,
+                references=references,
+                model_type=MODEL_PATH,
+                num_layers=17,
+                device=DEVICE,
+                rescale_with_baseline=True,
+                baseline_path="/appdata/cortex/dev4/shared/libs/huggingface/roberta-large/en/roberta-large.tsv",
+                lang="en"
+            )
+            # add one set of columns per candidate
+            df[f"{cand}_precision"] = [round(min(max(x, 0.0), 1.0), 6) for x in out["precision"]]
+            df[f"{cand}_recall"]    = [round(min(max(x, 0.0), 1.0), 6) for x in out["recall"]]
+            df[f"{cand}_f1"]        = [round(min(max(x, 0.0), 1.0), 6) for x in out["f1"]]
+    except Exception as e:
+        raise HTTPException(500, f"Scoring error: {e}")
+
+    # write to a temp file and return
+    tmp = tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False)
+    df.to_excel(tmp.name, index=False)
+    tmp.close()
+
+    return FileResponse(
+        tmp.name,
+        filename="bert_results.xlsx",
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+
+# ─── RUN AS SCRIPT ────────────────────────────────────────────────────────────
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8001)
