@@ -1,24 +1,20 @@
 import time
 import pandas as pd
 from sacrebleu import sentence_bleu, sentence_chrf
-from typing import Union, List, Optional, Dict
-import warnings
-from pathlib import Path
 from sacrebleu.metrics import CHRF
-import os
+from typing import Union, List, Optional, Dict
+from pathlib import Path
+import warnings, os
 
 class TranslationEvaluator:
     """
     - Load translations (CSV or Excel)
     - Compute sentence‑level metrics: BLEU, ChrF, ChrF++
     - Compute model‑level metrics as the average of sentence scores
-    - Export detailed & model metrics to Excel
+    - Export both to an Excel workbook
     """
-    def __init__(
-        self,
-        output_file: Union[str, Path] = "output_data.xlsx"
-    ):
-        os.environ["TRANSFORMERS_CACHE"] = r"C:/Users/ZKC7H0U/Documents/4. BERT score/roberta-large"
+    def __init__(self, output_file: Union[str, Path]="output_data.xlsx"):
+        os.environ["TRANSFORMERS_CACHE"] = r"C:/Users/.../roberta-large"
         warnings.simplefilter("ignore")
         self._data             = None
         self._detailed_results = None
@@ -27,7 +23,6 @@ class TranslationEvaluator:
         self._chrff            = CHRF(word_order=2)
 
     def load_data(self, file_path: Union[str, Path]) -> None:
-        """Load input CSV or Excel into a DataFrame."""
         file_path = Path(file_path)
         if file_path.suffix == ".csv":
             self._data = pd.read_csv(file_path)
@@ -40,39 +35,36 @@ class TranslationEvaluator:
         self,
         prediction_cols: List[str],
         reference_col:   str               = "en",
-        metrics:         List[str]         = ["BLEU", "ChrF", "ChrF++"],
+        metrics:         List[str]         = ["BLEU","ChrF","ChrF++"],
         keep_cols:       Optional[List[str]] = None
     ) -> None:
-        """
-        Run the full evaluation:
-          1) Validate requested columns
-          2) Compute sentence‑level metrics
-          3) Compute model‑level metrics as averages of those sentence scores
-          4) Write both sheets to Excel
-        """
         if self._data is None:
             raise ValueError("No data loaded. Call load_data() first.")
 
-        keep_cols = keep_cols or []
-        if reference_col not in keep_cols:
-            keep_cols.insert(0, reference_col)
-
-        self._validate_columns(reference_col, prediction_cols, keep_cols)
-        self._compute_detailed_metrics(reference_col, prediction_cols, metrics, keep_cols)
-        self._compute_model_metrics(prediction_cols, metrics)
-        self._generate_report()
-
-    def _validate_columns(
-        self,
-        reference_col:   str,
-        prediction_cols: List[str],
-        keep_cols:       List[str]
-    ) -> None:
-        """Ensure all requested columns exist in the DataFrame."""
-        required = {reference_col} | set(prediction_cols) | set(keep_cols)
-        missing  = [c for c in required if c not in self._data.columns]
+        # 1) filter out any prediction_cols not actually in your DataFrame
+        available = [c for c in prediction_cols if c in self._data.columns]
+        missing   = set(prediction_cols) - set(available)
         if missing:
-            raise ValueError(f"Missing columns in data: {missing}")
+            print(f"⚠️  Warning: these prediction columns were not found and will be skipped: {missing}")
+        prediction_cols = available
+        if not prediction_cols:
+            raise ValueError("No valid prediction columns left after filtering.")
+
+        # 2) build keep_cols list
+        keep = keep_cols or []
+        if reference_col not in keep:
+            keep.insert(0, reference_col)
+
+        # 3) validate that ref & keep are in the data
+        req = {reference_col} | set(keep)
+        not_found = [c for c in req if c not in self._data.columns]
+        if not_found:
+            raise ValueError(f"Missing required columns: {not_found}")
+
+        # 4) compute everything
+        self._compute_detailed_metrics(reference_col, prediction_cols, metrics, keep)
+        self._compute_model_metrics   (prediction_cols, metrics)
+        self._generate_report()
 
     def _compute_detailed_metrics(
         self,
@@ -80,107 +72,77 @@ class TranslationEvaluator:
         prediction_cols: List[str],
         metrics:         List[str],
         keep_cols:       List[str]
-    ) -> None:
-        """Compute BLEU, ChrF, ChrF++ for each sentence."""
-        # Start from the subset of columns to keep
+    ):
         df = self._data[keep_cols].copy()
-
         for pred in prediction_cols:
             if "BLEU" in metrics:
                 df[f"{pred} BLEU"] = df.apply(
-                    lambda row: sentence_bleu(
-                        row[pred],
-                        references=[row[reference_col]]
-                    ).score,
+                    lambda r: sentence_bleu(r[pred], references=[r[reference_col]]).score
+                              if pd.notna(r[pred]) and r[pred].strip()
+                              else 0.0,
                     axis=1
                 )
             if "ChrF" in metrics:
                 df[f"{pred} ChrF"] = df.apply(
-                    lambda row: sentence_chrf(
-                        row[pred],
-                        references=[row[reference_col]]
-                    ).score,
+                    lambda r: sentence_chrf(r[pred], references=[r[reference_col]]).score
+                              if pd.notna(r[pred]) and r[pred].strip()
+                              else 0.0,
                     axis=1
                 )
             if "ChrF++" in metrics:
                 df[f"{pred} ChrF++"] = df.apply(
-                    lambda row: self._chrff.sentence_score(
-                        row[pred],
-                        references=[row[reference_col]]
-                    ).score,
+                    lambda r: self._chrff.sentence_score(r[pred], references=[r[reference_col]]).score
+                              if pd.notna(r[pred]) and r[pred].strip()
+                              else 0.0,
                     axis=1
                 )
 
-        # Re‑order: keep_cols, then for each pred its metrics
+        # reorder: keep_cols, then each pred's metrics
         cols = keep_cols.copy()
-        for pred in prediction_cols:
+        for p in prediction_cols:
             for m in metrics:
-                cols.append(f"{pred} {m}")
+                cols.append(f"{p} {m}")
         self._detailed_results = df[cols]
 
     def _compute_model_metrics(
         self,
         prediction_cols: List[str],
         metrics:         List[str]
-    ) -> None:
-        """
-        Compute model‑level metrics as the average of the
-        per‑sentence scores in self._detailed_results.
-        """
-        results: List[Dict[str, float]] = []
+    ):
+        results = []
         for pred in prediction_cols:
-            row: Dict[str, float] = {"Model": pred}
+            row = {"Model": pred}
             for m in metrics:
-                col_name = f"{pred} {m}"
-                if col_name in self._detailed_results:
-                    row[m] = self._detailed_results[col_name].mean()
+                col = f"{pred} {m}"
+                if col in self._detailed_results:
+                    row[m] = self._detailed_results[col].mean()
             results.append(row)
-
         self._model_metrics = pd.DataFrame(results)
 
-    def _generate_report(self) -> None:
-        """Write detailed & model metrics to an Excel workbook."""
+    def _generate_report(self):
         out = self._output_file
-        out.parent.mkdir(parents=True, exist_ok=True)
-
+        out.parent.mkdir(exist_ok=True, parents=True)
         with pd.ExcelWriter(out, engine="xlsxwriter") as writer:
-            # Detailed per‐sentence scores
-            self._detailed_results.to_excel(
-                writer,
-                sheet_name="Detailed metrics",
-                index=False
-            )
+            self._detailed_results.to_excel(writer, sheet_name="Detailed metrics", index=False)
+            self._model_metrics   .to_excel(writer, sheet_name="Model metrics",    index=False)
 
-            # Model‐level averages
-            self._model_metrics.to_excel(
-                writer,
-                sheet_name="Model metrics",
-                index=False
-            )
-
-            # Beautify the Model metrics sheet
-            book = writer.book
+            wb    = writer.book
             sheet = writer.sheets["Model metrics"]
-            max_row, max_col = self._model_metrics.shape
-            headers = [{"header": c} for c in self._model_metrics.columns]
-            sheet.add_table(0, 0, max_row, max_col - 1, {
+            r, c  = self._model_metrics.shape
+            headers = [{"header":x} for x in self._model_metrics.columns]
+            sheet.add_table(0, 0, r, c-1, {
                 "columns": headers,
                 "style":   "Table Style Medium 9",
                 "name":    "ModelMetrics"
             })
-            for idx, col in enumerate(self._model_metrics.columns):
-                width = max(
-                    self._model_metrics[col].astype(str).map(len).max(),
-                    len(col)
-                ) + 2
-                sheet.set_column(idx, idx, width)
+            for idx, colname in enumerate(self._model_metrics.columns):
+                w = max(self._model_metrics[colname].astype(str).map(len).max(), len(colname)) + 2
+                sheet.set_column(idx, idx, w)
 
         print(f"Report saved to {out.resolve()}")
 
     def get_detailed_results(self) -> pd.DataFrame:
-        """Return the detailed per‐sentence DataFrame."""
         return self._detailed_results.copy()
 
     def get_model_metrics(self) -> pd.DataFrame:
-        """Return the model‐level averages DataFrame."""
         return self._model_metrics.copy()
