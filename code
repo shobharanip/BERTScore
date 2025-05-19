@@ -1,200 +1,190 @@
 import os
-import tempfile
+import warnings
 import pandas as pd
-from fastapi import FastAPI, HTTPException, UploadFile, File
-from fastapi.responses import FileResponse
-from pydantic import BaseModel
-import evaluate   # picks up your local bertscore.py
-import traceback
+import numpy as np
+import torch
+from datasets import Dataset
+from nltk.translate.bleu_score import sentence_bleu
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from transformers import (
+    T5ForConditionalGeneration,
+    T5Tokenizer,
+    Seq2SeqTrainer,
+    Seq2SeqTrainingArguments,
+    DataCollatorForSeq2Seq,
+    EarlyStoppingCallback,
+    logging,
+)
+from accelerate import Accelerator, DataLoaderConfiguration
+from peft import LoraConfig, get_peft_model
 
-# ─── APP DEFINITION ────────────────────────────────────────────────────────────
+# ─── Setup ──────────────────────────────────────────────────────────────────────
+warnings.filterwarnings("ignore")
+logging.set_verbosity_error()
+torch.manual_seed(0)
+os.environ["CUDA_VISIBLE_DEVICES"] = "1,2"
+print("GPUs available:", torch.cuda.device_count())
 
-app = FastAPI(
-    title="RoBERTa‑Large BERTScore API",
-    description="API for calculating BERTScore between reference and candidate texts",
-    version="1.0.0"
+# ─── Hyperparameters ────────────────────────────────────────────────────────────
+checkpoint                   = "/appdata/cortex/dev1/aptaiModels/madlad400-3b-mt"
+output_dir                   = "/appdata/cortex/dev1/shob/Refined_datasets"
+max_length                   = 128
+batch_size                   = 8
+gradient_accumulation_steps  = 4
+learning_rate                = 1.245e-06
+weight_decay                 = 0.00227
+num_train_epochs             = 14
+eval_steps                   = 100
+warmup_ratio                 = 0.1
+label_smoothing_factor       = 0.1
+lr_scheduler_type            = "cosine"
+bleu_workers                 = 25
+
+# ─── Load Model & Tokenizer ─────────────────────────────────────────────────────
+tokenizer  = T5Tokenizer.from_pretrained(checkpoint)
+base_model = T5ForConditionalGeneration.from_pretrained(
+    checkpoint,
+    low_cpu_mem_usage=True,
+    offload_state_dict=True
 )
 
-# ─── MODEL & DEVICE ────────────────────────────────────────────────────────────
-
-MODEL_PATH = os.getenv(
-    "BERT",
-    "/appdata/cortex/dev4/shared/libs/huggingface/roberta-large"
+# ─── Data Collator ───────────────────────────────────────────────────────────────
+data_collator = DataCollatorForSeq2Seq(
+    tokenizer=tokenizer,
+    model=base_model,
+    padding=True,
+    pad_to_multiple_of=8
 )
-DEVICE = "cuda" if os.environ.get("CUDA_VISIBLE_DEVICES") else "cpu"
 
-# ─── LOAD LOCAL METRIC ─────────────────────────────────────────────────────────
+# ─── Load & Prepare Datasets ────────────────────────────────────────────────────
+def load_lower_df(path):
+    df = pd.read_excel(path)
+    return df.applymap(lambda x: x.lower() if isinstance(x, str) else x)
 
-try:
-    scorer = evaluate.load("bertscore")
-    print("Loaded local bertscore metric")
-except Exception as e:
-    print("Failed to load bertscore metric:", e)
-    scorer = None
+train_df = load_lower_df(f"{output_dir}/refined_train_df.xlsx")
+val_df   = load_lower_df(f"{output_dir}/validation_df.xlsx")
 
-# ─── REQUEST / RESPONSE MODELS ─────────────────────────────────────────────────
+train_ds = Dataset.from_pandas(train_df)
+eval_ds  = Dataset.from_pandas(val_df)
 
-class ScoreRequest(BaseModel):
-    reference: list[str]
-    candidate: list[str]
-
-class ScoreResponse(BaseModel):
-    precision: list[float]
-    recall:    list[float]
-    f1:        list[float]
-    model_type: str = "roberta-large"
-    version:    str = "0.3.12"
-
-# ─── HEALTHCHECK ───────────────────────────────────────────────────────────────
-
-@app.get("/")
-async def health_check():
-    return {
-        "status": "healthy" if scorer else "failed",
-        "model":  MODEL_PATH,
-        "device": DEVICE
-    }
-
-# ─── SINGLE‑PAIR SCORING ───────────────────────────────────────────────────────
-
-@app.post("/bertscore/", response_model=ScoreResponse)
-async def calculate_score(request: ScoreRequest):
-    if scorer is None:
-        raise HTTPException(500, "Metric failed to load")
-    if len(request.reference) != len(request.candidate):
-        raise HTTPException(400, "reference and candidate must have the same length")
-
-    try:
-        out = scorer.compute(
-            predictions=[str(request.candidate[0]).strip()],
-            references=[str(request.reference[0]).strip()],
-            model_type=MODEL_PATH,
-            num_layers=17,
-            device=DEVICE,
-            rescale_with_baseline=True,
-            baseline_path="/appdata/cortex/dev4/shared/libs/huggingface/roberta-large/en/roberta-large.tsv",
-            lang="en"
-        )
-        return {
-            "precision": [round(min(max(x, 0.0), 1.0), 6) for x in out["precision"]],
-            "recall":    [round(min(max(x, 0.0), 1.0), 6) for x in out["recall"]],
-            "f1":        [round(min(max(x, 0.0), 1.0), 6) for x in out["f1"]],
-            "model_type": "roberta-large",
-            "version":    "0.3.12"
-        }
-    except Exception as e:
-        print(traceback.format_exc())
-        raise HTTPException(500, str(e))
-
-# ─── BATCH FROM LOCAL EXCEL ───────────────────────────────────────────────────
-
-@app.get("/batch-local/")
-async def batch_local():
-    if scorer is None:
-        raise HTTPException(500, "Metric failed to load")
-
-    inp = "/appdata/cortex/dev4/shobha/ALLmodels/ivr_h1_all_model_predictions.xlsx"
-    out = "/appdata/cortex/dev4/shobha/ALLmodels/ivr_h1_all_model_predictions_BERT_Score.xlsx"
-
-    if not os.path.exists(inp):
-        raise HTTPException(404, f"Input file not found: {inp}")
-
-    try:
-        df = pd.read_excel(inp)
-    except Exception as e:
-        raise HTTPException(500, f"Could not read Excel: {e}")
-
-    for col in ("reference", "candidate"):
-        if col not in df.columns:
-            raise HTTPException(400, f"Excel must have '{col}' column")
-
-    try:
-        res = scorer.compute(
-            predictions=df["candidate"].apply(lambda x: str(x).strip()).tolist(),
-            references=df["reference"].apply(lambda x: str(x).strip()).tolist(),
-            model_type=MODEL_PATH,
-            num_layers=17,
-            device=DEVICE,
-            rescale_with_baseline=True,
-            baseline_path="/appdata/cortex/dev4/shared/libs/huggingface/roberta-large/en/roberta-large.tsv",
-            lang="en"
-        )
-        df["precision"] = [round(min(max(float(x), 0.0), 1.0), 6) for x in res["precision"]]
-        df["recall"]    = [round(min(max(float(x), 0.0), 1.0), 6) for x in res["recall"]]
-        df["f1"]        = [round(min(max(float(x), 0.0), 1.0), 6) for x in res["f1"]]
-    except Exception as e:
-        raise HTTPException(500, f"Scoring error: {e}")
-
-    try:
-        df.to_excel(out, index=False)
-    except Exception as e:
-        raise HTTPException(500, f"Cannot write Excel: {e}")
-
-    return FileResponse(
-        out,
-        filename=os.path.basename(out),
-        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+def preprocess_function(examples):
+    inputs  = examples["es"]
+    targets = examples["en"]
+    model_inputs = tokenizer(
+        inputs,
+        text_target=targets,
+        max_length=max_length,
+        truncation=True
     )
+    with tokenizer.as_target_tokenizer():
+        labels = tokenizer(
+            targets,
+            max_length=max_length,
+            truncation=True
+        )
+    model_inputs["labels"] = labels["input_ids"]
+    return model_inputs
 
-# ─── BATCH VIA UPLOAD (multi‑candidate support) ─────────────────────────────────
+tokenized_train = train_ds.map(
+    preprocess_function,
+    batched=True,
+    remove_columns=["es","en"]
+)
+tokenized_eval = eval_ds.map(
+    preprocess_function,
+    batched=True,
+    remove_columns=["es","en"]
+)
 
-@app.post("/batch-bert/")
-async def batch_bert(file: UploadFile = File()):
-    if scorer is None:
-        raise HTTPException(500, "Metric failed to load")
-    if not file.filename.lower().endswith((".xls", ".xlsx")):
-        raise HTTPException(400, "Upload an .xls or .xlsx file")
+# ─── Attach LoRA Adapters ───────────────────────────────────────────────────────
+lora_config = LoraConfig(
+    r               = 32,
+    lora_alpha      = 64,
+    target_modules  = ["q_proj","v_proj","k_proj"],
+    lora_dropout    = 0.2,
+    bias            = "all",        # fine‑tune all bias terms
+    fan_in_fan_out  = True          # match model’s internal weight layout
+)
+model = get_peft_model(base_model, lora_config)
+model.gradient_checkpointing_enable()
 
-    try:
-        df = pd.read_excel(file.file)
-    except Exception as e:
-        raise HTTPException(400, f"Cannot read Excel: {e}")
+# ─── BLEU Metric Functions ─────────────────────────────────────────────────────
+def postprocess_text(preds, labels):
+    preds  = [p.strip() for p in preds]
+    labels = [[l.strip()] for l in labels]
+    return preds, labels
 
-    # must have exactly one reference column
-    if "reference" not in df.columns:
-        raise HTTPException(400, "Excel must have a 'reference' column")
+def get_transMetrics_single(t, r):
+    bleu = sentence_bleu([r.split()], t.split(), weights=(0.75,0.25,0,0))
+    return {"BLEU": round(bleu,2)}
 
-    # detect all candidate columns (candidate1…candidate10)
-    candidate_cols = [c for c in df.columns if c.lower().startswith("candidate")]
-    if not candidate_cols:
-        raise HTTPException(400, "Excel must have at least one 'candidateX' column")
-
-    # prepare references once
-    references = df["reference"].apply(lambda x: str(x).strip()).tolist()
-
-    try:
-        for cand in candidate_cols:
-            preds = df[cand].apply(lambda x: str(x).strip()).tolist()
-            out = scorer.compute(
-                predictions=preds,
-                references=references,
-                model_type=MODEL_PATH,
-                num_layers=17,
-                device=DEVICE,
-                rescale_with_baseline=True,
-                baseline_path="/appdata/cortex/dev4/shared/libs/huggingface/roberta-large/en/roberta-large.tsv",
-                lang="en"
-            )
-            # add one set of columns per candidate
-            df[f"{cand}_precision"] = [round(min(max(x, 0.0), 1.0), 6) for x in out["precision"]]
-            df[f"{cand}_recall"]    = [round(min(max(x, 0.0), 1.0), 6) for x in out["recall"]]
-            df[f"{cand}_f1"]        = [round(min(max(x, 0.0), 1.0), 6) for x in out["f1"]]
-    except Exception as e:
-        raise HTTPException(500, f"Scoring error: {e}")
-
-    # write to a temp file and return
-    tmp = tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False)
-    df.to_excel(tmp.name, index=False)
-    tmp.close()
-
-    return FileResponse(
-        tmp.name,
-        filename="bert_results.xlsx",
-        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+def get_transMetrics_batch(translation, reference, workers=bleu_workers):
+    flat_ref = (
+        [item for sublist in reference for item in sublist]
+        if isinstance(reference[0], list) else reference
     )
+    with ThreadPoolExecutor(max_workers=workers) as exe:
+        futures = [exe.submit(get_transMetrics_single, t, r)
+                   for t, r in zip(translation, flat_ref)]
+        results = [f.result() for f in as_completed(futures)]
+    return pd.DataFrame(results).mean().round(2).to_dict()
 
-# ─── RUN AS SCRIPT ────────────────────────────────────────────────────────────
+def compute_metrics(eval_preds):
+    preds, labels = eval_preds
+    if isinstance(preds, tuple):
+        preds = preds[0]
+    decoded_preds  = tokenizer.batch_decode(preds, skip_special_tokens=True)
+    labels = np.where(labels != -100, labels, tokenizer.pad_token_id)
+    decoded_labels = tokenizer.batch_decode(labels, skip_special_tokens=True)
+    decoded_preds, decoded_labels = postprocess_text(decoded_preds, decoded_labels)
+    return get_transMetrics_batch(decoded_preds, decoded_labels)
 
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8001)
+# ─── Accelerator & Dataloader Config ──────────────────────────────────────────
+dataloader_config = DataLoaderConfiguration(dispatch_batches=False, split_batches=True)
+accelerator = Accelerator(
+    device_placement            = True,
+    gradient_accumulation_steps = gradient_accumulation_steps,
+    mixed_precision             = "fp16",
+    dataloader_config           = dataloader_config
+)
+
+# ─── TrainingArguments & Trainer ───────────────────────────────────────────────
+training_args = Seq2SeqTrainingArguments(
+    output_dir                  = output_dir,
+    do_train                    = True,
+    evaluation_strategy         = "steps",
+    eval_steps                  = eval_steps,
+    save_strategy               = "steps",
+    save_steps                  = eval_steps,
+    load_best_model_at_end      = True,
+    metric_for_best_model       = "BLEU",
+    greater_is_better           = True,
+    learning_rate               = learning_rate,
+    per_device_train_batch_size = batch_size,
+    per_device_eval_batch_size  = batch_size,
+    weight_decay                = weight_decay,
+    warmup_ratio                = warmup_ratio,
+    lr_scheduler_type           = lr_scheduler_type,
+    label_smoothing_factor      = label_smoothing_factor,
+    num_train_epochs            = num_train_epochs,
+    predict_with_generate       = True,
+    logging_strategy            = "steps",
+    logging_steps               = 50,
+    save_total_limit            = 2,
+)
+
+trainer = Seq2SeqTrainer(
+    model           = model,
+    args            = training_args,
+    train_dataset   = tokenized_train,
+    eval_dataset    = tokenized_eval,
+    data_collator   = data_collator,
+    tokenizer       = tokenizer,
+    compute_metrics = compute_metrics,
+    callbacks       = [EarlyStoppingCallback(early_stopping_patience=3)],
+)
+
+# ─── Prepare & Start Training ──────────────────────────────────────────────────
+trainer = accelerator.prepare(trainer)
+result  = trainer.train()
+print(result)
