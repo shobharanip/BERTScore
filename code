@@ -1,3 +1,9 @@
+Baseline (no warmup, no smoothing)
+it drops “are we” because the first big updates scramble small function words.
+
+
+
+
 2) Add warmup_steps=500
 	•	In plain terms:
 You don’t shove the bike forward at full speed—you steady the learner with small pushes first.
