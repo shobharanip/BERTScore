@@ -1,3 +1,22 @@
+
+
+ args = Seq2SeqTrainingArguments(
+     output_dir="…",
+     do_train=True,
+     eval_steps=100,
+     learning_rate=1.2453e-6,
+     per_device_train_batch_size=batch_size,
+     per_device_eval_batch_size=batch_size,
+     weight_decay=0.00227,
+     save_total_limit=1,
+     num_train_epochs=14,
+     predict_with_generate=True,
++    warmup_steps=500,              # ← slowly ramp up the LR over 500 steps
++    label_smoothing_factor=0.1,    # ← smooth the target distribution by 0.1
+ )
+
+
+
 import time
 from pathlib import Path
 from typing import List, Optional, Union
