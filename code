@@ -1,4 +1,9 @@
 
+
+With our new warmup_steps=500 it’ll ramp the learning‑rate slowly, so early on it won’t overshoot and drop words.
+	•	And label_smoothing_factor=0.1 keeps it from becoming over‑confident on any single token.
+
+
  args = Seq2SeqTrainingArguments(
      output_dir="…",
      do_train=True,
