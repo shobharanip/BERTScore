@@ -1,3 +1,35 @@
+2) Add warmup_steps=500
+	•	In plain terms:
+You don’t shove the bike forward at full speed—you steady the learner with small pushes first.
+	•	Effect:
+The model’s first 500 steps use a very low LR, so it learns those tiny helper words before speeding up.
+
+now “are we” is back, though the main verb still isn’t quite right.
+
+⸻
+
+3) Also add label_smoothing_factor=0.1
+	•	In plain terms:
+Instead of saying “I want exactly this word,” you say “I want mostly this word, but maybe a tiny bit of other words too.”
+	•	Effect:
+The model stops over‑committing to the exact training phrasing, so it chooses the correct verb form and natural word order.
+	•	Final output:
+
+
+perfect match, with both the auxiliary (“are we”) and the gerund (“requesting”) correctly placed.
+
+⸻
+
+Bottom line:
+	•	Warmup brings back tiny but crucial words (“are we”).
+	•	Smoothing polishes the verb form and phrasing (“requesting”).
+
+Together they turn
+
+“Why request this information?”
+into
+“Why are we requesting this information?”
+
 
 
 With our new warmup_steps=500 it’ll ramp the learning‑rate slowly, so early on it won’t overshoot and drop words.
