@@ -1,3 +1,7 @@
+cd /app/cortex/dev1/shob
+du -h --max-depth=1 . 2>/dev/null | sort -hr
+
+
 du -sh /app/cortex/dev1/shob/.local/Trash
 
 du -h --max-depth=1 /app/cortex/dev1/shob/.local/Trash
