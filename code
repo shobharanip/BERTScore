@@ -1,3 +1,7 @@
+
+
+find "$HOME" -type d \( -iname "*trash*" -o -iname ".Trash*" \)
+
 Baseline (no warmup, no smoothing)
 it drops “are we” because the first big updates scramble small function words.
 
