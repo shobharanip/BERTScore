@@ -1,3 +1,13 @@
+du -sh /app/cortex/dev1/shob/.local/Trash
+
+du -h --max-depth=1 /app/cortex/dev1/shob/.local/Trash
+
+
+du -h --max-depth=2 /app/cortex/dev1/shob/.local/Trash/files | sort -h
+
+
+
+
 
 
 find "$HOME" -type d \( -iname "*trash*" -o -iname ".Trash*" \)
