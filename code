@@ -6,7 +6,16 @@ du -h --max-depth=1 /app/cortex/dev1/shob/.local/Trash
 du -h --max-depth=2 /app/cortex/dev1/shob/.local/Trash/files | sort -h
 
 
+# 1. (Optional) Double‑check what you're about to delete:
+ls -lah /app/cortex/dev1/shob/.local/Trash/files
+ls -lah /app/cortex/dev1/shob/.local/Trash/info
 
+# 2. Delete all trashed files and metadata:
+rm -rf /app/cortex/dev1/shob/.local/Trash/files/* 
+rm -rf /app/cortex/dev1/shob/.local/Trash/info/*
+
+# 3. (Optional) Verify it’s empty:
+du -sh /app/cortex/dev1/shob/.local/Trash
 
 
 
