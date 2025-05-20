@@ -1,3 +1,75 @@
+Cumulative Transcript (truncated)
+Summary_Transcript_CPS
+Tester 3 Accuracy CPS
+Tester 3 Hallucination CPS
+Tester 3 Ground Truth Summary
+No. No, I didn’t. Maybe that’s what I should do. I didn’t even think about that. You know, I just never had no problems before.
+problems with credit card
+1
+0
+Caller states they’ve never had any credit‑card issues.
+Okay. Oh, okay then. And thank you so very much, Jay. I know this. Thank you. You have a great day.
+thank jay for a great day
+5
+0
+Caller thanks Jay and ends the call warmly.
+Yes, with whom I speaking? Jason, good morning. My name is birthday. Uh‑huh. Yes, I tried my son, some funds and
+jason’s son, funds and funds
+0
+0
+Caller asks for agent Jason and mentions attempting a funds transfer.
+Remember the exact error message. 900. No. But as you know, I haven’t said anything in a long time. So No.
+error message
+2
+0
+Caller requests recall of the system error code “900.”
+Oh. Yep, because it says something about later, you know. Okay. Okay. I wonder if you change thanks or something.
+change thanks or something
+1
+0
+Caller inquires about modifying a “thanks” message or setting.
+Then if it’s going to take that long, I needed expedited because she told me I will be able to get it to.
+expedite the delivery of a house
+1
+1
+Caller requests expedited service due to delay.
+Okay, okay, man, what’s that? … you said it’s being mailed out. expedited she said I would get it the next day. … can you tell me if it’s still possible before it to be expedited. …
+expedite the delivery of a package
+5
+0
+Caller asks to expedite the mailed item for next‑day delivery.
+Okay. Bye. Yeah, yeah. Awesome. … So it’s coming UPS. … Thank you so much.
+ups is coming
+4
+0
+Caller confirms the package is arriving via UPS.
+Arlithia Watson. Okay, I’m sorry. Can you repeat that? … I’m calling because I just left the branch … they froze my car and they were sending me out another
+leave branch because it froze
+1
+1
+Caller reports their card was frozen at the branch and they left.
+Arlithia Watson. … they froze my car … sending me out another as yesterday … supposed to be able to get it expedited … 506 Truman … lithium waiting at Yahoo.
+expedite a car being sent out
+1
+1
+Caller asks to expedite sending a replacement card.
+Okay, otherwise it’ll put a stop on it … But just for today, I couldn’t put a stop one just for today … because that 205 was done a lot of damage on my account today.
+put a stop one on a car for today
+0
+1
+Caller requests a stop payment on a $205 charge today.
+John Davis. Thank you. Chairman, a stop payment on something that was taken out from my account. Is it too late?
+stop payment on something taken out of account
+5
+0
+Caller asks if they can still stop a payment already debited.
+
+
+
+
+
+
+
 cd /app/cortex/dev1/shob
 du -h --max-depth=1 . 2>/dev/null | sort -hr
 
