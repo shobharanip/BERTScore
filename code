@@ -1,3 +1,12 @@
+wanted to share a quick update on the recent fine-tuning experiments I’ve been working on.
+
+As part of the optimization process, I applied regularization techniques during model fine-tuning to enhance generalization and mitigate overfitting. These adjustments have led to noticeable improvements in key evaluation metrics — specifically, the BLEU and chrF scores showed significant gains compared to previous iterations.
+
+I’ll continue refining the model and will follow up with a detailed summary of the results, including visualizations and comparisons, once all runs are complete.
+
+Please let me know if you’d like to review the interim results or discuss any next steps.
+
+
 Cumulative Transcript (truncated)
 Summary_Transcript_CPS
 Tester 3 Accuracy CPS
