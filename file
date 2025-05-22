@@ -1,3 +1,50 @@
+Over the last three years as Lead Analyst – Data Science, I spearheaded the end‑to‑end design, development and production rollout of enterprise‑grade machine‑learning solutions for trading‑risk detection. Collaborating closely with stakeholders in Risk, Operations and IT, I translated complex business requirements into scalable, reusable analytic pipelines. By packaging state‑of‑the‑art and improvised algorithms—leveraging both commercial platforms (e.g., Cloudera Data Science Workbench, AWS SageMaker) and open‑source toolkits (scikit‑learn, PyTorch/TensorFlow)—I balanced functionality with total cost of ownership, driving measurable improvements in both efficiency and accuracy.
+
+Key Responsibilities & Achievements
+	•	Solution Architecture & Reusability:
+	•	Developed a modular “Analytics Toolkit” in Python that encapsulated clustering (K‑means, Isolation Forest), ensemble (Random Forest, XGBoost) and deep‑learning (feed‑forward ANN) algorithms, reducing new‑project setup time by 65 %.
+	•	Packaged advanced feature‑engineering workflows (rolling‑window statistics, time‑of‑day flags, moving‑average ratios) with built‑in L1/L2 regularization, achieving a 25 % reduction in false‑positive alerts.
+	•	Documented standardized APIs and usage guidelines, enabling 20+ data analysts to onboard the framework in under two weeks and slashing integration effort by 40 %.
+	•	Model Development & Optimization:
+	•	Engineered over 50 domain‑specific features from high‑frequency trading logs, customer profiles and external market indicators.
+	•	Applied K‑fold cross‑validation with automated grid‑search to tune hyperparameters across 250+ experiments, boosting overall fraud‑detection accuracy by 18 % and precision by 12 %.
+	•	Validated model robustness via adversarial sampling and bootstrapped hold‑out sets, ensuring stable performance across market regimes and reducing accuracy variance by 30 %.
+	•	Commercial vs. Open‑Source Evaluation:
+	•	Assessed total cost of ownership for commercial ML platforms versus in‑house open‑source architectures. By adopting a hybrid deployment—cloud‑native training on SageMaker for large‑scale runs and edge scoring via Docker containers on-prem—I realized a 30 % licensing‑cost savings while preserving model throughput of 10 k transactions per second.
+	•	Integrated Git‑based CI/CD in Jenkins to automate container builds, unit tests and Canary deployments; cut average deployment lead time from three weeks to under four hours.
+	•	Productionization & Monitoring:
+	•	Orchestrated batch‑scoring pipelines with Autosys, scheduling nightly inference jobs and incremental retraining triggers.
+	•	Built custom Grafana dashboards to track real‑time data drift, accuracy, precision/recall trade‑offs and resource utilization; automated Slack alerts when key metrics dropped below 92 % of SLA targets. Over 12 consecutive quarters, the system maintained zero SLA violations.
+	•	Enacted a rolling‑retrain policy: models retrained weekly on fresh data to adapt to emergent fraud tactics, leading to a 20 % uplift in capture rate for novel anomaly patterns.
+	•	Knowledge Transfer & Team Enablement:
+	•	Conducted 15 hands‑on workshops and code‑along sessions for risk analysts and junior data scientists, covering topics from advanced feature engineering to neural‑network fine‑tuning.
+	•	Authored 200+ pages of internal documentation (architecture diagrams, “cookbook” recipes, troubleshooting guides), reducing time‑to‑productivity for new hires by 50 %.
+	•	Mentored a cohort of five junior analysts, two of whom were promoted to mid‑level Data Scientist roles within a year.
+	•	Cross‑Functional Collaboration:
+	•	Liaised with Trading, Operations and Compliance teams to integrate real‑time risk scores into the enterprise monitoring dashboard, enabling front‑line investigators to triage alerts within minutes.
+	•	Partnered with Infrastructure & Security to containerize models in Docker, integrate with Kubernetes orchestration and ensure SOC‑2 compliance for data access and pipeline governance.
+	•	Coordinated periodic “risk‑hackathons” to prototype new anomaly‑detection use cases (e.g., network‑graph clustering, time‑series autoencoders) and surface high‑impact PoCs for executive review.
+
+Business Impact
+	•	Time‑to‑Insight: Accelerated project kickoff and MVP delivery from 8 weeks down to 3 weeks—a 60 % improvement—by reusing core analytic modules.
+	•	Fraud Capture: Increased overall suspicious‑transaction capture rate by 22 %, offsetting potential losses of $8 million annually.
+	•	Accuracy & Efficiency: Elevated average model precision to 94 % (from 80 %) and maintained recall above 91 % across three market cycles.
+	•	Cost Savings: Realized 30 % lower software licensing costs through a balanced open‑source/commercial strategy; reduced cloud‑compute spend by 18 % via optimized batch scheduling.
+	•	Stakeholder Satisfaction: Earned a “Business Excellence” award from senior risk executives for delivering a production‑ready solution 3 months ahead of schedule and under budget.
+
+Throughout this three‑year tenure, I consistently implemented innovative analytics, debugged complex edge‑case failures, improved throughput and accuracy, and collaborated effectively across business and technical teams—packaging advanced algorithms into reusable assets that empowered a larger pool of analysts to deliver rapid, high‑impact solutions.
+
+
+
+
+
+
+
+
+
+
+
+
 The Lead Analyst – Data Science will develop analytic & machine learning models using a combination of state-of-the-art or improvised approaches, using either commercial or open source tools to balance functionality and cost to client. S/he will develop approaches that can be re-used across projects, by packaging advanced analytic algorithms in a way a larger pool of analysts can apply in their client business problems
 
 
