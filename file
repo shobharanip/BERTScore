@@ -1,3 +1,24 @@
+Requirement Gathering & Analysis: Clarify business objectives and technical requirements by reviewing the Statement of Work, interviewing stakeholders and drafting Change Requests that detail scope, assumptions, deliverables, cost and schedule.
+
+Data Analytics & Model Development: Extract, cleanse and preprocess trading data via Hive/SQL; engineer domain‑specific features with L1/L2 regularization; train and validate unsupervised (K‑means, Isolation Forest) and supervised (Random Forest, ANN) models; and perform Spanish‑text evaluation (BLEU, ChrF, ChrF++, BERTScore).
+
+Project Management: Planning & Tracking: Build and maintain a detailed micro‑ and macro‑level schedule; manage requirement changes; allocate resources; monitor progress; assess risks; and implement corrective actions to ensure on‑time, on‑scope delivery.
+
+Quality Management & Assurance: Conduct code and documentation reviews using standardized checklists; validate model outputs against QA criteria; and iteratively refine review processes to uphold customer quality expectations.
+
+Customer Relationship Management: Proactively manage stakeholder expectations; solicit and incorporate periodic feedback; anticipate risks and challenges; propose solutions; and maintain continuous engagement and satisfaction throughout the project lifecycle.
+
+
+
+
+
+
+
+
+
+
+
+
 Over the last three years as Lead Analyst – Data Science, I spearheaded the end‑to‑end design, development and production rollout of enterprise‑grade machine‑learning solutions for trading‑risk detection. Collaborating closely with stakeholders in Risk, Operations and IT, I translated complex business requirements into scalable, reusable analytic pipelines. By packaging state‑of‑the‑art and improvised algorithms—leveraging both commercial platforms (e.g., Cloudera Data Science Workbench, AWS SageMaker) and open‑source toolkits (scikit‑learn, PyTorch/TensorFlow)—I balanced functionality with total cost of ownership, driving measurable improvements in both efficiency and accuracy.
 
 Key Responsibilities & Achievements
