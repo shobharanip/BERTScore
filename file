@@ -1,3 +1,12 @@
+The Lead Analyst – Data Science will develop analytic & machine learning models using a combination of state-of-the-art or improvised approaches, using either commercial or open source tools to balance functionality and cost to client. S/he will develop approaches that can be re-used across projects, by packaging advanced analytic algorithms in a way a larger pool of analysts can apply in their client business problems
+
+
+
+
+
+
+
+
 Project description:
 The objective of the project is to identify risk/anomalies in trading by carrying out data analytics using machine learning / AI techniques. The project involves analyzing past customer trading patterns to predict future high‑risk transactions. Anomaly detection is carried out by segregating and clustering highly suspicious data. Machine learning techniques are leveraged to uncover unusual customer behavior for further investigation. Historical data is ingested from Hive (distributed file systems) via SQL queries—Oracle DB and Apache Spark have been removed from scope. A secondary Spanish‑text evaluation pipeline computes BLEU, ChrF, ChrF++ and BERTScore metrics to capture any language‑based risk indicators.
 
