@@ -1,84 +1,88 @@
 Project description:
-The objective of the project is to identify risk/anomalies in trading by carrying out data analytics using machine learning/AI techniques. The project involves analyzing the past trading patterns of customer and predict the high-risk transaction in the future time. Anomaly detection is carried out by segregating and clustering data that is highly suspicious. Machine learning techniques are leveraged to identify unusual patterns in customer data and further investigate them. The historical data used to analyze is sourced from various application sources viz. Oracle db and distributed file systems.
- The project involves using statistical, analytical methods and AI tools to automate processes within the Risk analytics team and develop smart solutions to business challenges. The potential fraudulent transactions are flagged which helps the risk analyst to further probe the transaction thoroughly. 
-The project involves i) extracting data from desired sources using hive and sql queries ii) Data preprocessing to remove data that does not drive the output of the Machine learning solution. iii) Implementing rules iv) Carrying out Feature engineering to understand the influence of specific data in the predictor variables and come up with additional features/variables which add to the strength of the prediction model. iv) Data cleaned and modified are subjected to various Machine learning algorithms viz. Kmeans clustering, Isolation Forest, Random Forest and Deep Learning-Artificial neural networks. v)Using Machine learning techniques like K-fold cross validation along with Grid search to arrive at the best algorithm suited for the problem and to come up with optimum Hyperparameters to be used. Thus, the prediction model obtained post exhaustive training is used to predict/identify the potential fraudulent transaction. The model is triggered on a periodic basis using a Job scheduler. The performance of the model is continuously monitored. If performance degradation below preset levels is observed, the model is retrained to bring the performance back to acceptable levels.
-Project objective:
-The objective of the project is to identify risk/anomalies in trading by carrying out data analytics using machine learning/AI techniques. The project involves analyzing the past trading patterns of customer and predict the high-risk transaction in the future time. Anomaly detection is carried out by segregating and clustering data that is highly suspicious. Machine learning techniques are leveraged to identify unusual patterns in customer data and further investigate them. The historical data used to analyze is sourced from various application sources viz. Oracle db and distributed file systems. 
-The machine learning models are trained on historical data using supervised and unsupervised machine learning techniques. Various machine learning techniques viz. Kmeans clustering, Isolation Forest, Random Forest and Deep Learning-Artificial neural networks are used in building the model.
-The best performing ML algorithm and model is chosen and further tuned on various Hyper parameters. Furthermore, the final ML model is implemented in production by following guidelines of customer Deployment process.
-The project involves the following tasks
-1.	Work with stakeholders throughout the Risk team to identify opportunities for leveraging company data to drive business solutions.
-2.	Mining and analyzing the data from various customer databases to drive optimization and improvement of product development
-3.	Assess the effectiveness and accuracy of new data sources and data gathering techniques.
-4.	Develop custom data models and algorithms to apply to data sets.
-5.	Use predictive modeling/unsupervised machine learning techniques to increase and optimize customer experiences and revenue generation
-6.	Develop A/B testing framework and test model quality.
-7.	Coordinate with different functional teams to implement models and monitor outcomes.
-8.	Develop processes and tools to monitor and analyze model performance and data accuracy.
+The objective of the project is to identify risk/anomalies in trading by carrying out data analytics using machine learning / AI techniques. The project involves analyzing past customer trading patterns to predict future high‑risk transactions. Anomaly detection is carried out by segregating and clustering highly suspicious data. Machine learning techniques are leveraged to uncover unusual customer behavior for further investigation. Historical data is ingested from Hive (distributed file systems) via SQL queries—Oracle DB and Apache Spark have been removed from scope. A secondary Spanish‑text evaluation pipeline computes BLEU, ChrF, ChrF++ and BERTScore metrics to capture any language‑based risk indicators.
 
+The project also uses statistical methods, regularization (L1/L2) and AI tools to automate processes within the Risk Analytics team and deliver smart solutions to business challenges. Potentially fraudulent transactions are flagged to enable risk analysts to probe them thoroughly.
+
+The project involves
+i) Extracting raw trading records from Hive using SQL queries
+ii) Preprocessing data to remove noise and irrelevant fields
+iii) Implementing rule‑based filters to catch known fraud patterns
+iv) Carrying out feature engineering (e.g., rolling‑volume, time‑of‑day, derived ratios) and applying regularization methods to strengthen predictor variables
+v) Subjecting cleaned data to unsupervised (K‑means clustering, Isolation Forest) and supervised (Random Forest, deep‑learning ANNs) algorithms
+vi) Using K‑fold cross‑validation with grid search to select the best algorithm and hyperparameters
+vii) Deploying the final model on a GPU server via PyCharm, triggering periodic batch scoring jobs through Autosys
+viii) Continuously monitoring performance; retraining automatically when metrics fall below preset thresholds
+
+⸻
+
+Project objective:
+To build and deploy a robust, end‑to‑end machine‑learning system that flags high‑risk trading activity in real time—minimizing fraud losses and empowering the Risk Analytics team with proactive, data‑driven insights.
+
+⸻
+
+The project involves the following tasks:
+1. Work with stakeholders throughout the Risk team to identify opportunities for leveraging company data to drive business solutions
+2. Mine and analyze datasets from distributed file systems to optimize predictive accuracy and product development
+3. Assess the effectiveness and accuracy of new data sources and gathering techniques
+4. Develop custom data models and algorithms tailored to trading‑fraud detection
+5. Use predictive modeling and unsupervised ML techniques to enhance customer experience and revenue protection
+6. Develop an A/B testing framework to validate model quality and impact
+7. Coordinate with IT, Operations and Risk teams to integrate models and monitor outcomes
+8. Build processes and tools to continuously monitor model performance and data integrity
+
+⸻
 
 Project phases
-Requirement Gathering, Requirement Analysis and Estimation: 
 
-Objective of this activity is to analyze and understand the requirements and where the requirements are not clear, raise queries and obtain clarifications from the customers directly. Provide the cost and effort estimation for the project.
-Percentage of time spent: 10%
-
-Tasks: 
-Analyze and understand the requirements from Statement of Work or Proposal or interacting with the customer, gather all the required inputs for performing specified tasks and get clarifications from the customer where the requirements are not clear
-Prepare the change requests (CR) containing the scope, inputs, assumptions, deliverables, cost and schedule details for the specified tasks
+Requirement Gathering, Requirement Analysis and Estimation
+	•	Objective: Clarify project scope and gather all inputs; raise queries where requirements are ambiguous
+	•	Percentage of time spent: 10%
+	•	Tasks:
+	•	Review Statement of Work or Proposal; interact with customers to obtain detailed requirements
+	•	Draft Change Requests (CRs) covering scope, inputs, assumptions, deliverables, cost and schedule
 
 Data Analytics
-The objective of the project is to identify risk and anomalies in trading by carrying out data analytics using machine learning and AI techniques. The project involves analyzing the past trading patterns of customer and predict the high risk transaction in the future time. Anomaly detection is carried out by segregating and clustering data that is highly suspicious.
-Percentage of time spent: 50%
-
-Tasks: 
-Work with stakeholders throughout the Risk team to identify opportunities for leveraging company data to drive business solutions.
-Mining and analyzing the data from various customer databases to drive optimization and improvement of product development
-Assess the effectiveness and accuracy of new data sources and data gathering techniques.
-Develop custom data models and algorithms to apply to data sets.
-Use predictive modeling to increase and optimize customer experiences and revenue generation
-Develop A/B testing framework and test model quality.
-Coordinate with different functional teams to implement models and monitor outcomes.
-Develop processes and tools to monitor and analyze model performance and data accuracy.
+	•	Objective: Identify trading anomalies via ML/AI techniques
+	•	Percentage of time spent: 50%
+	•	Tasks:
+	•	Collaborate with risk stakeholders to pinpoint analytics use cases
+	•	Extract and preprocess data from Hive/SQL
+	•	Engineer features and apply regularization
+	•	Train and evaluate clustering, Isolation Forest, Random Forest and ANN models
+	•	Implement Spanish‑text evaluation metrics (BLEU, ChrF, ChrF++, BERTScore)
+	•	Build A/B tests and validate model quality
+	•	Coordinate model integration and outcome monitoring
 
 Project Management: Planning, Scheduling and Tracking
-
-Objective of this activity is to plan, schedule and track the activities defined for the project of Risk prediction.
-
-Percentage of time spent: 20%
-
-Tasks: 
-Prepare a detailed project schedule containing information of resources and timelines for the tasks on micro/macro level, manage any changes in requirements (inputs, timelines and deliverables) and ensure on time delivery
-Prepare the plan for resource, cost calculation, quality, risk, and change management
-Allocate work, track and review the project scope, schedule, quality, resource requirements, costs, assess risks on a periodic basis and take corrective measures 
-
+	•	Objective: Plan, schedule and track all Risk Prediction activities
+	•	Percentage of time spent: 20%
+	•	Tasks:
+	•	Create detailed project schedules at micro/macro levels; manage scope changes
+	•	Plan resources, budgets, quality controls, risk and change management
+	•	Allocate tasks, track progress, assess risks and take corrective actions
 
 Quality Management
-	
-Objective of this activity is to ensure the deliverables meet the quality expectations of the customer.
-
-	Percentage of time spent: 10%
-
-Tasks: 
-Review of the model code, documentations through review checklists and ensure that the quality of the deliveries are in line with customer expectations
-Assess effectiveness of review checklist and keep improving to improve the deliverables quality
-
-
+	•	Objective: Ensure deliverables meet customer quality expectations
+	•	Percentage of time spent: 10%
+	•	Tasks:
+	•	Conduct code and documentation reviews using standardized checklists
+	•	Continuously refine QA processes to improve deliverables
 
 Customer Relationship Management
-
-Objective of this activity is to manage the expectations of the customer and establish good engagement practice with the Customer. 
-
-Percentage of time spent: 10%
-
-Tasks: 
-Anticipate risks, challenges and customer needs associated with the project and provide solution to achieve quality of the deliverables and meet schedule 
-Analyze and constantly seek customer feedback periodically to improve the quality of service being provided and ensure continuous customer delight 
-Bring unresolved issues with the customer, understand stakeholder views and resolve the issues
-
+	•	Objective: Manage customer expectations and foster strong engagement
+	•	Percentage of time spent: 10%
+	•	Tasks:
+	•	Proactively identify risks, challenges and customer needs; propose solutions
+	•	Solicit periodic feedback to drive continuous service improvements
+	•	Escalate and resolve open issues in partnership with stakeholders
 
 Project technologies
-PyCharm. 
-Python to manipulate data and draw insights from data sets.
-Machine learning techniques including various classification algorithms like Kmeans clustering, Decision trees, Isolation Forest, Random Forest and Fine-tuning model
-Autosys to trigger the Machine learning model in batch mode.
+	•	IDE & Development: PyCharm (Python)
+	•	Compute: GPU server for deep‑learning fine‑tuning
+	•	Data Extraction: Hive & SQL
+	•	Batch Scheduling: Autosys
+	•	ML Frameworks: scikit‑learn, PyTorch / TensorFlow
+	•	Techniques: K‑means clustering, Isolation Forest, Random Forest, ANN; L1/L2 regularization; K‑fold CV with grid search
+	•	Text Evaluation: BLEU, ChrF, ChrF++, BERTScore for Spanish‑text risk indicators
+
+
