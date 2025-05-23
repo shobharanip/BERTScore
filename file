@@ -1,3 +1,37 @@
+Over the past three years as Lead Analyst  Data Science, I spearheaded the end to end development, deployment and lifecycle management of advanced analytic and machine learning solutions for trading risk detection. Working at the intersection of business and technology, I collaborated with stakeholders across Risk, Operations and IT to translate complex fraud detection requirements into scalable, reusable code libraries and containerized pipelines. By packaging state of the art and improvised algorithms leveraging both commercial platforms and open source toolkits, I drove a 65 percent reduction in time to insight for new analytics projects and delivered models that consistently outperformed legacy rules engines.
+
+I designed and led multiple cross functional initiatives to standardize feature engineering, model training and hyperparameter tuning workflows. In one flagship effort, I developed a modular Python package for anomaly scoring which accelerated onboarding of new data sources by 40 percent and reduced integration effort by over 30 percent. I championed L1 L2 regularization and robust K fold cross validation with automated grid search, achieving an average 18 percent uplift in fraud detection accuracy while lowering false positive rates by 25 percent.
+
+To balance cost to client and functionality, I evaluated commercial and open source alternatives containerizing models with Docker and deploying on a GPU powered cluster managed via PyCharm and Autosys. I established end to end CI CD practices in Jenkins pipelines, cutting deployment lead time from weeks to hours. My monitoring framework leveraged custom dashboards that tracked real time data drift and model performance metrics; automated retraining triggers maintained accuracy above preset SLAs, resulting in zero SLA breaches over 12 consecutive quarters.
+
+I also packaged advanced analytic techniques such as Isolation Forest clustering, Random Forest ensembles and deep learning ANNs into a lightweight library distributed to a team of more than 20 analysts. This Analytics Toolkit enabled rapid prototyping of new risk scoring use cases and was adopted across three major trading desks. I led internal training sessions and authored comprehensive documentation, reducing ramp up time for new hires by 50 percent.
+
+Key Accomplishments and Metrics
+Reusable Library Delivery Developed and maintained a core Python package for anomaly scoring, reducing project setup time by 65 percent and integration effort by 30 percent.
+Accuracy and Efficiency Gains Improved overall model accuracy by 18 percent and decreased false positive alerts by 25 percent through systematic feature engineering, L1 L2 regularization and K fold cross validation hyperparameter search.
+Automation and Deployment Containerized ML pipelines with Docker implemented Autosys scheduled batch jobs and Jenkins driven CI CD, cutting deployment lead time from three weeks to under four hours.
+Performance Monitoring Built dashboards to monitor data drift and model metrics; automated retraining when accuracy dipped below 92 percent achieving zero SLA violations for 12 quarters.
+Cross Project Reuse Packaged clustering, ensemble and ANN algorithms into a reusable Analytics Toolkit adopted by more than 20 analysts, accelerating new use case delivery by 40 percent.
+Cost Optimization Balanced commercial and open source tools, achieving a 30 percent reduction in licensing costs without sacrificing performance or functionality.
+Mentoring and Knowledge Transfer Conducted more than 10 hands on workshops, authored over 150 pages of documentation; reduced onboarding time for junior data scientists by 50 percent.
+Awards and Recognition Received the Innovator of the Year award for designing the modular scoring library and was invited to present at the annual Infosys TechNext Summit.
+
+Core Responsibilities
+Translate business requirements into technical specifications for anomaly detection and risk scoring solutions.
+Architect feature engineering pipelines rolling statistics time of day flags derived ratios and enforce regularization methods to prevent overfitting.
+Lead hyperparameter tuning efforts using automated grid search and cross validation frameworks.
+Containerize and deploy models on GPU clusters orchestrate batch scoring via Autosys and CI CD through Jenkins.
+Design and implement continuous monitoring dashboards to track key metrics such as accuracy, precision, recall and data drift.
+Package analytic algorithms into a reusable analyst friendly toolkit; conduct training and documentation.
+Collaborate with cross functional teams including Risk, Operations and IT to integrate outputs into enterprise dashboards and ensure robust data governance.
+Evaluate new commercial and open source ML tools to maintain a balanced technology stack and control costs.
+
+
+
+
+
+
+
 iOver the course of the initial phase I immersed myself fully in the project context by engaging directly with business stakeholders from the Risk team as well as subject matter experts in Trading Operations and Compliance in order to establish a crystal clear understanding of the overall problem statement and to translate high level business needs into detailed technical requirements. Beginning with the Statement of Work and any existing proposals or charters I conducted in depth scoping sessions in which I walked through each line item piece by piece and solicited clarifying questions on process flows business rules data availability and existing reporting gaps. I then hosted a series of workshops with cross functional participants to map current state data pipelines end to end identifying every source system every transformation rule and every downstream consumer of the data including dashboards and alerting systems. During these sessions I documented every data entity with sample volumes update frequency retention requirements and data quality thresholds. I created swimlane diagrams to illustrate dependencies between Trading Operations data capture processes and the centralized data lake ingestion pipelines in Hive to ensure that there were no blind spots or undocumented handoffs.
 
 As ambiguities emerged around certain data definitions such as the exact definition of a “filled order” versus a “partially filled order” and how cancelled transactions should be handled in the event of rapid retries I drafted detailed request for information tickets and coordinated rapid turnaround calls with platform engineers and risk analysts to lock down each nuance. At the conclusion of this collaborative process I authored a comprehensive Requirements Specification document that consolidated business objectives acceptance criteria data source catalogs transformation logic and key performance indicators. Each requirement was assigned a unique identifier and cross referenced with the appropriate business owner sign off. To formalize any late emerging scope changes I prepared well structured Change Request documents that captured the revised deliverable description assumptions dependencies effort estimates and updated timelines. The CRs were circulated through the project governance board and received formal approval in a record time two day cycle.
