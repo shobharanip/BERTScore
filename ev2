@@ -1,149 +1,113 @@
-import time
-from pathlib import Path
-from typing import List, Optional, Union
+Learning Rate (LR)
 
-import pandas as pd
-from sacrebleu.metrics import BLEU, CHRF
+What it is:
+The size of each update to the model’s weights.
 
+How it affects training:
+	•	Too high → large, unstable updates; training may diverge or “blow up.”
+	•	Too low → tiny updates; extremely slow convergence and risk of getting stuck in poor local minima.
 
-class TranslationEvaluator:
-    def __init__(self, output_file: str = "output_data.xlsx"):
-        self.output_file = Path(output_file)
-        self._data = pd.DataFrame()
-        self._detailed_frames: List[pd.DataFrame] = []
-        self._summary_frames:  List[pd.DataFrame] = []
-        self._timing_frames:   List[pd.DataFrame] = []
+Effect on BLEU/ChrF:
+	•	A well‑chosen LR lets your model find a better minimum in the loss surface, translating into higher BLEU/ChrF.
+	•	In practice, translation tasks on T5‑style models often use 3 × 10⁻⁵ – 5 × 10⁻⁴ as a starting range.
 
-    def load_data(self,
-                  file_path: str,
-                  sheet_name: Union[int,str] = 0) -> None:
-        p = Path(file_path)
-        if p.suffix.lower() in (".xls", ".xlsx"):
-            self._data = pd.read_excel(p, sheet_name=sheet_name)
-        elif p.suffix.lower() == ".csv":
-            self._data = pd.read_csv(p)
-        else:
-            raise ValueError(f"Unsupported file type: {p.suffix!r}")
-        if self._data.empty:
-            raise ValueError("Loaded data is empty")
-        # clear any previous runs
-        self._detailed_frames.clear()
-        self._summary_frames.clear()
-        self._timing_frames.clear()
+Tuning tips:
+	•	Start at 3 × 10⁻⁵; if training loss plateaus immediately, try bumping up to 5 × 10⁻⁵ or 1 × 10⁻⁴.
+	•	If you see unstable spikes in loss or metric, dial LR down by ×2–×5.
+	•	Use a learning‑rate scheduler (linear decay or cosine) so that after warmup, LR gradually decreases toward zero.
 
-    def evaluate(self,
-                 prediction_cols: List[str],
-                 reference_col:    str,
-                 metrics:          List[str],
-                 keep_cols:        Optional[List[str]],
-                 run_id:           int,
-                 measure_time:     bool) -> None:
-        df = self._data
-        keep = keep_cols or []
-        required = set(prediction_cols) | {reference_col} | set(keep)
-        missing = required - set(df.columns)
-        if missing:
-            raise ValueError(f"Missing columns in data: {missing}")
+⸻
 
-        # build per-sentence detailed frame
-        rows = []
-        for _, row in df.iterrows():
-            ref = str(row[reference_col])
-            for model in prediction_cols:
-                hyp = str(row[model])
-                rec = {c: row[c] for c in keep}
-                rec[reference_col] = ref
-                rec["model"] = model
-                rec["run"]   = run_id
+2. Warmup Steps (or Warmup Ratio)
 
-                if "BLEU" in metrics:
-                    rec["BLEU"]  = BLEU(effective_order=True).sentence_score(hyp, [ref]).score
-                if "ChrF" in metrics:
-                    rec["ChrF"]  = CHRF().sentence_score(hyp, [ref]).score
-                if "ChrF++" in metrics:
-                    rec["ChrF++"]= CHRF(word_order=2).sentence_score(hyp, [ref]).score
+What it is:
+Number of steps at the start of training during which LR linearly increases from 0 up to your base LR.
 
-                if measure_time:
-                    t0 = time.perf_counter()
-                    _ = hyp  # placeholder
-                    rec["response_time"] = time.perf_counter() - t0
+Why it matters:
+	•	Prevents the model from making large, uncalibrated updates early on (especially important when fine‑tuning large pre‑trained weights).
 
-                rows.append(rec)
+Typical settings:
+	•	Absolute warmup_steps: 500–1 000 steps for ~8 000 examples
+	•	Warmup ratio: 0.03–0.10 of total training steps
 
-        det_df = pd.DataFrame(rows)
-        self._detailed_frames.append(det_df)
+Tuning tips:
+	•	If you still see extreme loss spikes in the first few epochs, ↑ warmup_steps.
+	•	Too many warmup_steps wastes compute (LR stays very small), so keep it to ~5–10% of total steps.
 
-        # build corpus-level summary
-        sum_rows = []
-        for model in prediction_cols:
-            subset = det_df[det_df["model"] == model]
-            srec = {"model": model, "run": run_id}
-            if "BLEU" in metrics:
-                srec["BLEU"]  = subset["BLEU"].mean()
-            if "ChrF" in metrics:
-                srec["ChrF"]  = subset["ChrF"].mean()
-            if "ChrF++" in metrics:
-                srec["ChrF++"]= subset["ChrF++"].mean()
-            if measure_time:
-                srec["avg_response_time"] = subset["response_time"].mean()
-            sum_rows.append(srec)
-        self._summary_frames.append(pd.DataFrame(sum_rows))
+⸻
 
-        # build timing frame
-        if measure_time:
-            timing_rows = []
-            for model in prediction_cols:
-                avg = det_df[det_df["model"] == model]["response_time"].mean()
-                timing_rows.append({
-                    "model": model,
-                    "run": run_id,
-                    "avg_response_time": avg
-                })
-            self._timing_frames.append(pd.DataFrame(timing_rows))
+3. Label Smoothing
 
-    def save_excel(self) -> None:
-        # concat all runs
-        det_all = pd.concat(self._detailed_frames, ignore_index=True)
-        sum_all = pd.concat(self._summary_frames,  ignore_index=True)
-        tim_all = pd.concat(self._timing_frames,   ignore_index=True) \
-                  if self._timing_frames else pd.DataFrame()
+What it is:
+Your one‑hot target distribution is blended:
+$$q(k) = (1 – ϵ),δ_{k,y} + ϵ/V$$
+where ϵ is the smoothing factor and V is vocab size.
 
-        # 1) Detailed sheet: index = keep_cols + [reference_col]
-        #    model & run only appear in columns
-        val_cols = [c for c in det_all.columns
-                    if c not in ["model", "run"] and c not in self._data.columns.difference(["model","run"])]
-        # actually detect keep + ref:
-        all_nonvals = {"model","run"} | set(val_cols)
-        keep = [c for c in det_all.columns if c not in all_nonvals]
-        det_wide = det_all.pivot_table(
-            index=keep,
-            columns=["model","run"],
-            values=val_cols,
-            aggfunc="first"
-        )
+Effect on generalization:
+	•	Discourages the model from becoming over‑confident in its top prediction.
+	•	Often leads to modest BLEU gains (1–2 points) by smoothing out “hard” targets.
 
-        # 2) Summary sheet: metrics as rows, (run,model) as columns
-        long = sum_all.melt(
-            id_vars=["model","run"],
-            var_name="metric",
-            value_name="score"
-        )
-        sum_wide = long.pivot(
-            index="metric",
-            columns=["run","model"],
-            values="score"
-        )
+Typical setting:
+	•	ϵ = 0.1 is common in translation.
 
-        # 3) Timings sheet: model as rows, run as columns
-        tim_wide = tim_all.pivot(
-            index="model",
-            columns="run",
-            values="avg_response_time"
-        ) if not tim_all.empty else pd.DataFrame()
+Tuning tips:
+	•	You can sweep 0.0, 0.1, 0.2 – usually 0.1 is optimal; beyond that you may under‑train your model.
 
-        # write to Excel
-        with pd.ExcelWriter(self.output_file, engine="openpyxl") as w:
-            det_wide.to_excel(w, sheet_name="Detailed")
-            sum_wide.to_excel(w, sheet_name="Summary")
-            tim_wide.to_excel(w, sheet_name="Timings")
-        print(f"Wrote {self.output_file} with Detailed / Summary / Timings")
+⸻
+
+4. Weight Decay
+
+What it is:
+An L2 penalty on the weights:
+$$\mathcal{L} = \mathcal{L}_{\rm CE} + λ \sum_i w_i^2$$
+
+Effect on training:
+	•	Prevents overfitting by discouraging very large weights.
+	•	Too large λ → under‑fits, lower BLEU.
+	•	Too small (or zero) → may over‑fit to training data, BLEU may not generalize.
+
+Typical values:
+	•	λ ∈ [0.0, 0.01, 0.1] with 0.01 being a good default.
+
+Tuning tips:
+	•	If dev BLEU lags behind train BLEU (over‑fitting), ↑ weight_decay.
+	•	If both train and dev BLEU are very low (under‑fitting), ↓ weight_decay.
+
+⸻
+
+5. Batch Size
+
+What it is:
+Number of examples processed before each gradient update (often per GPU).
+
+Effect on training:
+	•	Larger batches → smoother, more stable gradients; can allow a slightly higher LR.
+	•	Smaller batches → noisier gradients which can act as a regularizer (sometimes boosting final BLEU), but training is less stable and slower per epoch.
+
+Memory trade‑off:
+	•	If GPU RAM is tight, you can use gradient accumulation to mimic a larger effective batch size.
+
+Typical range for T5‑small/medium:
+	•	per_device_train_batch_size ∈ [4, 16]
+	•	gradient_accumulation_steps to scale effective batch size up (e.g., 4 GPUs × bs8 with acc_steps=2 → effective bs=64).
+
+⸻
+
+6. Putting It All Together: Hyper‑Parameter Search
+	1.	Define a grid or random search over:
+	•	LR: [3 × 10⁻⁵, 5 × 10⁻⁵, 1 × 10⁻⁴]
+	•	Weight decay: [0.0, 0.01, 0.1]
+	•	Warmup ratio: [0.03, 0.1]
+	•	Label smoothing: [0.0, 0.1]
+	•	Batch size (or gradient accumulation): [8, 16, 32 effective]
+	2.	Evaluate each setting on your 819‑example validation set using BLEU, ChrF, ChrF++.
+	3.	Lock in the best combo then optionally do a finer sweep around that point (e.g. if 5 × 10⁻⁵ + 0.01 wd + 0.1 smooth + 0.05 warmup worked best, try 4 × 10⁻⁵ / 6 × 10⁻⁵, etc.).
+	4.	Use early stopping (stop if dev BLEU hasn’t improved for N evaluation steps) to avoid over‑training.
+
+⸻
+
+7. Beyond Hyper‑Parameters
+	•	More data or back‑translation: synthetic Spanish from English can boost your effective training set.
+	•	Advanced schedulers: cosine decay with restarts sometimes gives small gains.
+	•	Mixed‑precision (fp16): speeds up training so you can explore more hyper‑params in the same wall‑clock time.
+	•	Curriculum learning: start with shorter sentences or high‑frequency phrases, then ramp up to full variety.
