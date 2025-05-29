@@ -1,113 +1,45 @@
-Learning Rate (LR)
-
-What it is:
-The size of each update to the model’s weights.
-
-How it affects training:
-	•	Too high → large, unstable updates; training may diverge or “blow up.”
-	•	Too low → tiny updates; extremely slow convergence and risk of getting stuck in poor local minima.
-
-Effect on BLEU/ChrF:
-	•	A well‑chosen LR lets your model find a better minimum in the loss surface, translating into higher BLEU/ChrF.
-	•	In practice, translation tasks on T5‑style models often use 3 × 10⁻⁵ – 5 × 10⁻⁴ as a starting range.
-
-Tuning tips:
-	•	Start at 3 × 10⁻⁵; if training loss plateaus immediately, try bumping up to 5 × 10⁻⁵ or 1 × 10⁻⁴.
-	•	If you see unstable spikes in loss or metric, dial LR down by ×2–×5.
-	•	Use a learning‑rate scheduler (linear decay or cosine) so that after warmup, LR gradually decreases toward zero.
-
-⸻
-
-2. Warmup Steps (or Warmup Ratio)
-
-What it is:
-Number of steps at the start of training during which LR linearly increases from 0 up to your base LR.
-
-Why it matters:
-	•	Prevents the model from making large, uncalibrated updates early on (especially important when fine‑tuning large pre‑trained weights).
-
-Typical settings:
-	•	Absolute warmup_steps: 500–1 000 steps for ~8 000 examples
-	•	Warmup ratio: 0.03–0.10 of total training steps
-
-Tuning tips:
-	•	If you still see extreme loss spikes in the first few epochs, ↑ warmup_steps.
-	•	Too many warmup_steps wastes compute (LR stays very small), so keep it to ~5–10% of total steps.
-
-⸻
-
-3. Label Smoothing
-
-What it is:
-Your one‑hot target distribution is blended:
-$$q(k) = (1 – ϵ),δ_{k,y} + ϵ/V$$
-where ϵ is the smoothing factor and V is vocab size.
-
-Effect on generalization:
-	•	Discourages the model from becoming over‑confident in its top prediction.
-	•	Often leads to modest BLEU gains (1–2 points) by smoothing out “hard” targets.
-
-Typical setting:
-	•	ϵ = 0.1 is common in translation.
-
-Tuning tips:
-	•	You can sweep 0.0, 0.1, 0.2 – usually 0.1 is optimal; beyond that you may under‑train your model.
-
-⸻
-
-4. Weight Decay
-
-What it is:
-An L2 penalty on the weights:
-$$\mathcal{L} = \mathcal{L}_{\rm CE} + λ \sum_i w_i^2$$
-
-Effect on training:
-	•	Prevents overfitting by discouraging very large weights.
-	•	Too large λ → under‑fits, lower BLEU.
-	•	Too small (or zero) → may over‑fit to training data, BLEU may not generalize.
-
-Typical values:
-	•	λ ∈ [0.0, 0.01, 0.1] with 0.01 being a good default.
-
-Tuning tips:
-	•	If dev BLEU lags behind train BLEU (over‑fitting), ↑ weight_decay.
-	•	If both train and dev BLEU are very low (under‑fitting), ↓ weight_decay.
-
-⸻
-
-5. Batch Size
-
-What it is:
-Number of examples processed before each gradient update (often per GPU).
-
-Effect on training:
-	•	Larger batches → smoother, more stable gradients; can allow a slightly higher LR.
-	•	Smaller batches → noisier gradients which can act as a regularizer (sometimes boosting final BLEU), but training is less stable and slower per epoch.
-
-Memory trade‑off:
-	•	If GPU RAM is tight, you can use gradient accumulation to mimic a larger effective batch size.
-
-Typical range for T5‑small/medium:
-	•	per_device_train_batch_size ∈ [4, 16]
-	•	gradient_accumulation_steps to scale effective batch size up (e.g., 4 GPUs × bs8 with acc_steps=2 → effective bs=64).
-
-⸻
-
-6. Putting It All Together: Hyper‑Parameter Search
-	1.	Define a grid or random search over:
-	•	LR: [3 × 10⁻⁵, 5 × 10⁻⁵, 1 × 10⁻⁴]
-	•	Weight decay: [0.0, 0.01, 0.1]
-	•	Warmup ratio: [0.03, 0.1]
-	•	Label smoothing: [0.0, 0.1]
-	•	Batch size (or gradient accumulation): [8, 16, 32 effective]
-	2.	Evaluate each setting on your 819‑example validation set using BLEU, ChrF, ChrF++.
-	3.	Lock in the best combo then optionally do a finer sweep around that point (e.g. if 5 × 10⁻⁵ + 0.01 wd + 0.1 smooth + 0.05 warmup worked best, try 4 × 10⁻⁵ / 6 × 10⁻⁵, etc.).
-	4.	Use early stopping (stop if dev BLEU hasn’t improved for N evaluation steps) to avoid over‑training.
-
-⸻
-
-7. Beyond Hyper‑Parameters
-	•	More data or back‑translation: synthetic Spanish from English can boost your effective training set.
-	•	Advanced schedulers: cosine decay with restarts sometimes gives small gains.
-	•	Mixed‑precision (fp16): speeds up training so you can explore more hyper‑params in the same wall‑clock time.
-	•	Curriculum learning: start with shorter sentences or high‑frequency phrases, then ramp up to full variety.
+Hyperparameter
+What it does
+Why we set it (with example)
+learning_rate=1.245e‑6
+Size of each weight update
+A very small step so that when translating “compartimos”→“sharing,” we tweak the model gently without overwriting its pre‑trained knowledge
+warmup_steps=500
+Ramps LR from 0 up to learning_rate over the first 500 updates
+During the first 500 sentences (e.g. “¿cómo compartimos…”), LR stays low so we don’t suddenly ruin the model’s existing Spanish→English mapping
+label_smoothing_factor=0.1
+Softens the one‑hot targets by ϵ=0.1, preventing 100 % confidence
+Instead of forcing “información”→“information” at 100 %, we allow 90 % on “information” and 10 % spread elsewhere—this avoids over‑confidence on that exact word
+weight_decay=0.00227
+Adds a small L2 penalty on weights to discourage very large values
+Prevents the model from memorizing “es su opción” too rigidly, so it generalizes better to unseen phrases
+per_device_train_batch_size=…
+Number of examples processed per GPU before each weight update
+Grouping, say, 8 Spanish sentences (“subcuentas,” “vence después de 90 días,” etc.) gives a more stable gradient when learning “quiero que configures…”
+per_device_eval_batch_size=…
+Same as above but during evaluation
+We translate 8 examples at once (“cómo obtengo el nuevo widget…,” etc.) so that validation runs faster and uses GPU efficiently
+gradient_accumulation_steps=2
+Accumulate gradients over 2 mini‑batches before updating weights
+Effectively doubles your batch to 16 without needing more GPU memory—so updates reflect more data (e.g. both “es su opción” and “subcuentas”)
+num_train_epochs=14
+How many times to loop through your ~8 000 training examples
+14 passes ensure the model sees each Spanish sentence (including “¿cómo compartimos…” and “quiero que configures…”) enough times to learn good mappings
+eval_steps=100
+Run evaluation every 100 training steps
+Check translation quality (e.g. BLEU/ChrF on “¿cómo compartimos…” → “information sharing…”) frequently enough to catch over‑fitting or divergence
+save_total_limit=1
+Keep only the most recent checkpoint
+Saves disk space by only storing your latest model—no need to keep older snapshots of “es su opción” mappings
+predict_with_generate=True
+Use model.generate() during evaluation instead of just computing loss
+Actually generates English output (“information sharing: it’s your choice”) so you can inspect fluency, not just loss values
+remove_unused_columns=False
+Don’t drop original es/en columns when preparing batches
+We need the raw Spanish input (“¿cómo compartimos su información…”) in each batch so generate() knows what to translate
+optim=optimizer
+Specifies which optimizer object to use (e.g. your custom AdamW with weight_decay)
+Passing in our configured AdamW lets us control weight_decay=0.00227 and learning_rate=1.245e‑6 directly, rather than using the default optimizer
+logging_steps=1
+Log training loss and LR every step
+We log after each example (“subcuentas,” “es su opción,” etc.) so we get immediate feedback if 
