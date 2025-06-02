@@ -46,3 +46,51 @@ This is how big a step the model takes when updating weights after each batch.
 🧠 Why 2e-4?
 	•	It’s high enough to make noticeable progress (fine-tuning)
 	•	But not too high, so it won’t destabilize T5’s pretrained weights
+
+
+
+
+Parameter
+Effect on Training
+batch_size=16
+Model sees 16 examples at a time. Loss is averaged and weights updated once per batch. Training is faster and more stable compared to batch size = 1.
+learning_rate=2e-4
+Each weight update is small but meaningful. Model gradually learns new translation mappings without destroying pretrained knowledge.
+warmup_steps=500
+In the first 500 steps, learning rate slowly increases from 0 to 0.0002. Prevents sudden big updates that could harm pretrained weights.
+label_smoothing_factor=0.1
+When calculating loss, the model isn’t penalized heavily for close-but-not-exact synonyms. It encourages the model to generalize better (especially in translation where “Can I” and “May I” are both okay).
+
+
+
+batch_size=16 – Efficiency & Stability
+	•	Use: Efficient GPU use; reduces noise in gradients
+	•	Without it: Smaller batch (e.g. 1 or 2) leads to high variance in updates → unstable training
+	•	With larger batch (e.g. 64): May run out of memory or learn too slowly (over-smoothing gradients)
+
+⸻
+
+🔹 learning_rate=2e-4 – Optimal for Fine-Tuning
+	•	Use: Enables learning from new task without destroying pretrained weights
+	•	Too high? Model explodes or diverges
+	•	Too low? Takes forever to learn
+
+This value (0.0002) is widely used for transformers when fine-tuning with AdamW.
+
+⸻
+
+🔹 warmup_steps=500 – Gentle Start
+	•	Use: Prevents shocking the pretrained model early in training
+	•	What happens: For first 500 steps, learning rate slowly grows from 0 → 0.0002
+	•	Result: More stable early convergence, especially in large models
+
+⸻
+
+🔹 label_smoothing=0.1 – Better BLEU, Less Overfitting
+	•	Use: Model doesn’t overfit to exact wording. Gives partial credit for reasonable alternatives.
+	•	In translation tasks:
+	•	“Can I get my credit score?”
+	•	“May I receive my credit score?”
+Both are fine. Smoothing prevents over-penalizing one.
+
+
