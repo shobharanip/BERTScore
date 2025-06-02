@@ -1,4 +1,4 @@
-Now explain me clearly batch size learning rate warmup and label smoothing factor with one input example please and expected output
+cNow explain me clearly batch size learning rate warmup and label smoothing factor with one input example please and expected output
 
 
 batch_size = 16
@@ -92,5 +92,130 @@ This value (0.0002) is widely used for transformers when fine-tuning with AdamW.
 	•	“Can I get my credit score?”
 	•	“May I receive my credit score?”
 Both are fine. Smoothing prevents over-penalizing one.
+
+
+
+
+1. What is num_beams=4? (Beam Search)
+
+✅ Meaning:
+
+Instead of greedily picking just the top prediction at each step, beam search explores multiple sentence paths at once — and selects the most probable full sentence overall.
+
+⸻
+
+🧠 Analogy:
+
+Imagine a GPS suggesting multiple routes:
+	•	Greedy = always takes the shortest path from current position (might not be best overall).
+	•	Beam search = considers 4 possible routes in parallel and chooses the one with the best total travel time.
+
+⸻
+
+🔍 Example (Conceptual):
+
+Suppose the model has to generate the translation of:
+
+"¿Puedo obtener mi puntuación de crédito de hace seis meses?"
+
+
+
+
+
+Beam
+Partial Prediction
+Final Prediction
+Score
+1
+Can I get
+Can I get my credit score from six months ago?
+✅ High
+2
+May I access
+May I access my credit report for the last 6 months?
+High
+3
+Can I view
+Can I view my credit history going back 6 months?
+Medium
+4
+Could I obtain
+Could I obtain a credit score for the previous months?
+Medium-Low
+
+
+The model chooses the highest scoring full sentence from these 4.
+
+⸻
+
+✅ Why It’s Useful:
+	•	Improves fluency and coherence.
+	•	Picks better overall sentences, not just the next best word.
+	•	Reduces mistakes like word repetition, abrupt stops, or awkward phrasing.
+
+⸻
+
+🔷 2. What is early_stopping=True?
+
+✅ Meaning:
+
+In beam search, the model stops decoding as soon as the best beam finishes, instead of waiting for all 4 beams to finish.
+
+⸻
+
+📌 Why You Need This:
+
+Sometimes beam search keeps generating even after a good sentence is done — adding junk like:
+
+
+"Can I get my credit score from six months ago? Please let me know my..."
+
+
+
+With early_stopping=True:
+	•	As soon as Beam 1 ends in a valid sentence (eos_token reached),
+	•	If Beam 1 is the highest-scoring candidate,
+	•	✅ The model stops immediately — no wasted tokens or compute
+
+
+Benefit
+Why It Matters
+Prevents over-generation
+Model won’t keep generating beyond needed
+Reduces latency
+Faster inference (saves time & GPU)
+Increases output precision
+Ends with a clear, correct sentence
+Boosts BLEU
+Less fluff → better alignment with references
+
+"Can I get my credit score from six months ago?"
+
+Fluent
+✅ Accurate
+✅ Stops right at the correct point
+
+
+
+"Can I get my credit score from six months ago? I would like to also check..."
+Too long
+❌ BLEU score drops
+❌ Wasted decoding time
+
+Parameter
+What It Does
+Why It Helps
+num_beams = 4
+Tries multiple full sentence options
+Picks the best translation
+early_stopping = True
+Stops early when best is done
+Avoids over-generation and speeds things up
+
+
+jj
+
+
+
 
 
