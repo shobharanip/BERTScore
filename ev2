@@ -1,3 +1,30 @@
+1.	What is it?
+A setting that controls how the learning rate decreases during training.
+	2.	Default value:
+"linear"
+	3.	How it works:
+After the warmup phase, the learning rate linearly decreases to zero over the remaining training steps.
+	4.	When it applies:
+Used automatically if you don’t manually set lr_scheduler_type.
+	5.	Related to:
+	•	learning_rate → initial LR
+	•	warmup_steps → ramp-up duration
+	•	num_train_epochs → total training length
+	6.	Why it’s used by default:
+Simple, stable, and works well for many models.
+	7.	Limitation:
+It may decrease learning too quickly for large language models (LLMs), leading to underfitting near the end.
+	8.	Better alternative for LLMs:
+"cosine" is often preferred for smoother convergence in fine-tuning tasks like translation.
+	9.	Impact on training:
+Controls how fast or slow the model adjusts weights across epochs.
+	10.	Can be changed to:
+"cosine", "polynomial", "constant", "inverse_sqrt", etc. depending on your needs.
+
+
+
+
+
 eval_steps = 100
 (Default = 500 → You used a smaller value to evaluate more frequently and monitor translation quality closely.)
 	3.	evaluation_strategy = "epoch"
