@@ -1,3 +1,34 @@
+eval_steps = 100
+(Default = 500 → You used a smaller value to evaluate more frequently and monitor translation quality closely.)
+	3.	evaluation_strategy = "epoch"
+(Default = "no" → You evaluate at the end of every epoch to track performance more consistently.)
+	4.	learning_rate = 2e-4
+(Default = 5e-5 → A higher learning rate for faster convergence on a small translation dataset, balanced by warmup.)
+	5.	per_device_train_batch_size = 16
+(Default = 8 → Larger batch size speeds up training and improves stability due to gradient averaging.)
+	6.	per_device_eval_batch_size = 16
+(Default = 8 → Ensures evaluation is as efficient as training without memory overflow.)
+	7.	weight_decay = 0.01
+(Default = 0.0 → Helps reduce overfitting by penalizing large weights, improving generalization.)
+	8.	save_total_limit = 1
+(Default = None → Keeps only the latest model checkpoint to save disk space.)
+	9.	num_train_epochs = 10
+(Default = 3 → More training passes help the model learn richer Spanish-English translation patterns.)
+	10.	predict_with_generate = True
+(Default = False → Enables actual sentence generation during evaluation, essential for translation tasks.)
+	11.	warmup_steps = 500
+(Default = 0 → Gradually increases learning rate to prevent instability at training start.)
+	12.	label_smoothing_factor = 0.1
+(Default = 0.0 → Allows soft matching during training, improving generalization and BLEU score by tolerating synonyms like “May I get” vs “Can I get”.)
+	13.	num_beams = 4 (in generation config)
+(Default = 1 → Enables beam search to find more fluent translations across multiple decoding paths.)
+	14.	early_stopping = True (in generation config)
+(Default = False → Stops decoding once the best beam is complete, reducing over-generation and improving latency.)
+
+
+
+
+
 cNow explain me clearly batch size learning rate warmup and label smoothing factor with one input example please and expected output
 
 
