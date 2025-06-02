@@ -1,51 +1,48 @@
-1. “¿cómo compartimos su información: es su opción” → “information sharing: it’s your choice”   2. “subcuentas” → “sub‑accounts”   3. “vence después de 90 días” → “void after 90 days”   4. “quiero que configures los sobregiros en mi tarjeta” → “i want you to set up overdraft on my card”   5. “cómo obtengo el nuevo widget de Zelle” → “how do i get the new zelle widget”   6. “adquieren cheques universitarios” → “do you acquire university checks”   7. “mostrarme información sobre mejores hábitos financieros” → “show me credit score better money habits info”   8. “me cobraron un cargo por servicio de imágenes” → “i was charged a check imaging service fee of $3”
+Now explain me clearly batch size learning rate warmup and label smoothing factor with one input example please and expected output
 
 
+batch_size = 16
 
+✅ What it means:
 
+You process 16 examples at once before updating the model weights.
 
-Hyperparameter
-What it does
-Why we set it (with example)
-learning_rate=1.245e‑6
-Size of each weight update
-A very small step so that when translating “compartimos”→“sharing,” we tweak the model gently without overwriting its pre‑trained knowledge
-warmup_steps=500
-Ramps LR from 0 up to learning_rate over the first 500 updates
-During the first 500 sentences (e.g. “¿cómo compartimos…”), LR stays low so we don’t suddenly ruin the model’s existing Spanish→English mapping
-label_smoothing_factor=0.1
-Softens the one‑hot targets by ϵ=0.1, preventing 100 % confidence
-Instead of forcing “información”→“information” at 100 %, we allow 90 % on “information” and 10 % spread elsewhere—this avoids over‑confidence on that exact word
-weight_decay=0.00227
-Adds a small L2 penalty on weights to discourage very large values
-Prevents the model from memorizing “es su opción” too rigidly, so it generalizes better to unseen phrases
-per_device_train_batch_size=…
-Number of examples processed per GPU before each weight update
-Grouping, say, 8 Spanish sentences (“subcuentas,” “vence después de 90 días,” etc.) gives a more stable gradient when learning “quiero que configures…”
-per_device_eval_batch_size=…
-Same as above but during evaluation
-We translate 8 examples at once (“cómo obtengo el nuevo widget…,” etc.) so that validation runs faster and uses GPU efficiently
-gradient_accumulation_steps=2
-Accumulate gradients over 2 mini‑batches before updating weights
-Effectively doubles your batch to 16 without needing more GPU memory—so updates reflect more data (e.g. both “es su opción” and “subcuentas”)
-num_train_epochs=14
-How many times to loop through your ~8 000 training examples
-14 passes ensure the model sees each Spanish sentence (including “¿cómo compartimos…” and “quiero que configures…”) enough times to learn good mappings
-eval_steps=100
-Run evaluation every 100 training steps
-Check translation quality (e.g. BLEU/ChrF on “¿cómo compartimos…” → “information sharing…”) frequently enough to catch over‑fitting or divergence
-save_total_limit=1
-Keep only the most recent checkpoint
-Saves disk space by only storing your latest model—no need to keep older snapshots of “es su opción” mappings
-predict_with_generate=True
-Use model.generate() during evaluation instead of just computing loss
-Actually generates English output (“information sharing: it’s your choice”) so you can inspect fluency, not just loss values
-remove_unused_columns=False
-Don’t drop original es/en columns when preparing batches
-We need the raw Spanish input (“¿cómo compartimos su información…”) in each batch so generate() knows what to translate
-optim=optimizer
-Specifies which optimizer object to use (e.g. your custom AdamW with weight_decay)
-Passing in our configured AdamW lets us control weight_decay=0.00227 and learning_rate=1.245e‑6 directly, rather than using the default optimizer
-logging_steps=1
-Log training loss and LR every step
-We log after each example (“subcuentas,” “es su opción,” etc.) so we get immediate feedback if 
+⸻
+
+🧠 Why 16?
+	•	It’s big enough to get a stable average of gradients across different examples.
+	•	It’s small enough to fit on most modern GPUs (especially with LoRA).
+
+⸻
+
+✅ Expected Behavior:
+	•	For every 16 sentences (like the example), the model:
+	1.	Tokenizes each
+	2.	Predicts output tokens for each
+	3.	Calculates loss for each token in each sentence
+	4.	Averages the losses across all 16 samples
+	5.	Updates model weights once
+
+⸻
+
+📈 Benefits:
+	•	Faster training (parallelism)
+	•	More stable gradient updates than batch size = 1
+
+⚠️ Downsides:
+	•	Too large? GPU might run out of memory
+	•	Too small? Updates become noisy
+
+⸻
+
+🔷 2. learning_rate = 2e-4 (0.0002)
+
+✅ What it means:
+
+This is how big a step the model takes when updating weights after each batch.
+
+⸻
+
+🧠 Why 2e-4?
+	•	It’s high enough to make noticeable progress (fine-tuning)
+	•	But not too high, so it won’t destabilize T5’s pretrained weights
