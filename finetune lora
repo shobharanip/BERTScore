@@ -1,0 +1,122 @@
+# translation_app.py
+
+import os
+import torch
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
+from transformers import T5ForConditionalGeneration, T5Tokenizer
+from peft import PeftModel
+import traceback
+
+class TranslateRequest(BaseModel):
+    spanish: str
+
+class TranslateResponse(BaseModel):
+    english: str
+
+# ------------------------------------------------------------------------------
+# 1. Set up device, model paths, and load the model + adapter
+# ------------------------------------------------------------------------------
+
+DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+
+# Change these environment variables if your paths differ
+BASE_MODEL_PATH = os.getenv("BASE_MODEL", "Madlad400")
+LORA_ADAPTER_PATH = os.getenv("LORA_PATH", "marlad400_finetubed_lora_rank64alpha64")
+
+# Load T5 tokenizer and base model
+try:
+    tokenizer = T5Tokenizer.from_pretrained(BASE_MODEL_PATH)
+    base_model = T5ForConditionalGeneration.from_pretrained(BASE_MODEL_PATH)
+except Exception as e:
+    raise RuntimeError(f"Error loading base model/tokenizer from '{BASE_MODEL_PATH}': {e}")
+
+# Load LoRA adapter on top of the base model
+try:
+    model = PeftModel.from_pretrained(base_model, LORA_ADAPTER_PATH)
+    model = model.to(DEVICE)
+    model.eval()
+except Exception as e:
+    raise RuntimeError(f"Error loading LoRA adapter from '{LORA_ADAPTER_PATH}': {e}")
+
+# ------------------------------------------------------------------------------
+# 2. Initialize FastAPI
+# ------------------------------------------------------------------------------
+
+app = FastAPI(
+    title="Spanish→English Translation API",
+    description="Translate Spanish text into English using a LoRA‐fine‐tuned Madlad400 T5 model",
+    version="1.0.0"
+)
+
+# ------------------------------------------------------------------------------
+# 3. Health‐check (optional but recommended)
+# ------------------------------------------------------------------------------
+
+@app.get("/")
+async def health_check():
+    """
+    Quick health check to ensure the model is loaded.
+    Returns:
+      - status: "healthy" or "failed"
+      - device: "cuda" or "cpu"
+    """
+    # If `model` or `tokenizer` failed to load above, this will never be “healthy.”
+    return {
+        "status": "healthy" if (tokenizer and model) else "failed",
+        "device": DEVICE,
+    }
+
+# ------------------------------------------------------------------------------
+# 4. Spanish→English translation endpoint
+# ------------------------------------------------------------------------------
+
+@app.post("/translate/", response_model=TranslateResponse)
+async def translate(request: TranslateRequest):
+    """
+    Accepts JSON: { "spanish": "<Spanish text>" }
+    Returns JSON:  { "english": "<English translation>" }
+    """
+    # 1. Basic input validation
+    spanish_text = request.spanish.strip()
+    if not spanish_text:
+        raise HTTPException(status_code=400, detail="Input Spanish text must be non-empty")
+
+    # 2. Tokenize + prefix
+    #    We assume the T5 model was trained with a "translate Spanish to English: " prefix.
+    prefix = "translate Spanish to English: "
+    input_str = prefix + spanish_text
+
+    try:
+        # 3. Encode input
+        inputs = tokenizer.encode(input_str, return_tensors="pt", truncation=True).to(DEVICE)
+
+        # 4. Generate translation
+        #    - max_length=512 is safe for typical sentences; you can lower it if you only do short queries.
+        #    - num_beams=4 gives you a small beam search for higher fluency.
+        generation_output = model.generate(
+            inputs,
+            max_length=512,
+            num_beams=4,
+            early_stopping=True
+        )
+
+        # 5. Decode the first (and only) output sequence to text
+        english_text = tokenizer.decode(generation_output[0], skip_special_tokens=True)
+
+        # 6. Return
+        return TranslateResponse(english=english_text)
+
+    except Exception as e:
+        # If something goes wrong (OOM, tokenization error, etc.), return 500 with a message
+        traceback_str = traceback.format_exc()
+        # Optionally log traceback_str to your logs
+        raise HTTPException(status_code=500, detail=f"Translation failed: {e}")
+
+# ------------------------------------------------------------------------------
+# 5. Run with Uvicorn (only if directly executed)
+# ------------------------------------------------------------------------------
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("translation_app:app", host="0.0.0.0", port=8001, reload=True)
