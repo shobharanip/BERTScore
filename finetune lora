@@ -1,3 +1,12 @@
+
+POST http://uswxqpu6880.ussdnve.baml.com:8001/translate/
+Content-Type: application/json
+
+{
+  "spanish": "¿Puedo obtener mi puntuación de crédito de hace seis meses?"
+}
+
+
 # translation_app.py
 
 import os
