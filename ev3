@@ -16,19 +16,17 @@ class TranslationEvaluator:
         self,
         output_file: Union[str, Path] = "output_data.xlsx"
     ):
-        # optional: set transformers cache if you use COMET or BERTScore later
+        # optional cache setting for COMET/BERTScore later
         os.environ["TRANSFORMERS_CACHE"] = r"C:/Users/You/.cache/huggingface"
         warnings.simplefilter("ignore")
 
-        self._data            = None
-        self._detailed_results= None
-        self._model_metrics   = None
-        self._output_file     = Path(output_file)
-        # chrF++ (character n-grams + up to bigram word n-grams)
-        self._chrff           = CHRF(word_order=2)
+        self._data             = None
+        self._detailed_results = None
+        self._model_metrics    = None
+        self._output_file      = Path(output_file)
+        self._chrff            = CHRF(word_order=2)
 
     def load_data(self, file_path: Union[str, Path]) -> None:
-        """Load a CSV or Excel file into self._data"""
         fp = Path(file_path)
         if fp.suffix == ".csv":
             self._data = pd.read_csv(fp)
@@ -44,14 +42,8 @@ class TranslationEvaluator:
         metrics: List[str] = ["BLEU","ChrF","ChrF++"],
         keep_cols: Optional[List[str]] = None
     ) -> None:
-        """
-        Compute:
-         - sentence-level metrics (self._detailed_results)
-         - macro-average metrics (self._model_metrics)
-        """
         if self._data is None:
             raise ValueError("No data loaded. Call load_data() first.")
-
         keep = keep_cols or []
         if reference_col not in keep:
             keep.insert(0, reference_col)
@@ -66,10 +58,8 @@ class TranslationEvaluator:
         prediction_cols: List[str],
         keep_cols: List[str]
     ) -> None:
-        missing = [
-            c for c in [reference_col] + prediction_cols + keep_cols
-            if c not in self._data.columns
-        ]
+        missing = [c for c in [reference_col] + prediction_cols + keep_cols
+                   if c not in self._data.columns]
         if missing:
             raise ValueError(f"Columns not found in data: {missing}")
 
@@ -80,7 +70,6 @@ class TranslationEvaluator:
         metrics: List[str],
         keep_cols: List[str]
     ) -> None:
-        """Attach per-sentence BLEU, ChrF, ChrF++ into self._detailed_results."""
         df = self._data.copy()
         for p in prediction_cols:
             if "BLEU" in metrics:
@@ -99,7 +88,6 @@ class TranslationEvaluator:
                     axis=1
                 )
 
-        # reorder: keep_cols | each pred col + its metrics
         cols = keep_cols.copy()
         for p in prediction_cols:
             cols.append(p)
@@ -114,7 +102,6 @@ class TranslationEvaluator:
         metrics: List[str],
         prediction_cols: List[str]
     ) -> None:
-        """Compute macro-average of each sentence-level metric."""
         rows = []
         for p in prediction_cols:
             row = {"Model": p}
@@ -123,21 +110,18 @@ class TranslationEvaluator:
                     col_name = f"{p} {m}"
                     row[m] = self._detailed_results[col_name].mean()
             rows.append(row)
-
         self._model_metrics = pd.DataFrame(rows)
 
     def generate_report(self) -> None:
         """
-        Write two sheets to Excel:
-         - Detailed metrics
-         - Model metrics (macro-average only)
-        Prints out the full path so you know where it saved.
+        Public method: write Detailed + Model metrics (macro-avg) to Excel,
+        and print out the full path so you know where it went.
         """
         # ensure directory exists
         self._output_file.parent.mkdir(parents=True, exist_ok=True)
 
         with pd.ExcelWriter(self._output_file, engine="xlsxwriter") as writer:
-            # 1) detailed
+            # 1) detailed per-sentence
             self._detailed_results.to_excel(
                 writer, sheet_name="Detailed metrics", index=False
             )
@@ -146,12 +130,12 @@ class TranslationEvaluator:
                 writer, sheet_name="Model metrics", index=False
             )
 
-            # Optional: format the Model metrics sheet as a table
+            # format Model metrics sheet
             wb = writer.book
             ws = writer.sheets["Model metrics"]
             max_row, max_col = self._model_metrics.shape
             headers = [{"header": c} for c in self._model_metrics.columns]
-            ws.add_table(0, 0, max_row, max_col - 1, {
+            ws.add_table(0, 0, max_row, max_col-1, {
                 "column": headers,
                 "style": "Table Style Medium 9",
                 "name": "ModelMetrics"
@@ -165,10 +149,8 @@ class TranslationEvaluator:
 
         print(f"Report saved to: {self._output_file.resolve()}")
 
-    def get_detailed_results(self) -> pd.DataFrame:
-        """Return the per-sentence metrics."""
+    def get_detailed_results(self):
         return self._detailed_results.copy()
 
-    def get_model_metrics(self) -> pd.DataFrame:
-        """Return the macro-average summary."""
+    def get_model_metrics(self):
         return self._model_metrics.copy()
