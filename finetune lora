@@ -1,4 +1,14 @@
 
+### Translate Spanish → English (via localhost, bypassing proxy)
+POST http://127.0.0.1:8002/translate/
+Content-Type: application/json
+
+{
+  "spanish": "¿Puedo obtener mi puntuación de crédito de hace seis meses?"
+}
+
+
+
 @no_proxy = uswxqpu6897.ussdnve.baml.com
 
 ### Translate Spanish → English
