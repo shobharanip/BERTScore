@@ -10,7 +10,7 @@ import os
 class TranslationEvaluator:
     """
     Load data
-    BLEU, chrf, Chrf++, COMET metrics
+    BLEU, chrf, ChrF++, COMET metrics
     summary
     excel report generation
     """
@@ -26,7 +26,7 @@ class TranslationEvaluator:
         self._model_metrics = None
         self._output_file = Path(output_file)
 
-        # chrF++ object (char+up-to-bigram word n-grams)
+        # chrF++ (char + up-to-bigram word n-grams)
         self._chrff = CHRF(word_order=2)
 
     def load_data(self, file_path: Union[str, Path]) -> None:
@@ -62,7 +62,7 @@ class TranslationEvaluator:
 
         self._validate_columns(reference_col, prediction_cols, keep_cols)
         self._compute_detailed_metrics(reference_col, prediction_cols, metrics, keep_cols)
-        self._compute_model_metrics(reference_col, prediction_cols, metrics)
+        self._compute_model_metrics(metrics, prediction_cols)
 
     def _validate_columns(
         self,
@@ -121,38 +121,25 @@ class TranslationEvaluator:
 
     def _compute_model_metrics(
         self,
-        reference_col: str,
-        prediction_cols: List[str],
-        metrics: List[str]
+        metrics: List[str],
+        prediction_cols: List[str]
     ) -> None:
         """
-        Compute corpus-level and macro-average scores for each prediction column,
+        Compute macro-average scores for each prediction column,
         storing results in self._model_metrics.
         """
         results = []
-        # must have detailed_results already computed
         for pred_col in prediction_cols:
-            refs = self._data[reference_col].tolist()
-            hyps = self._data[pred_col].tolist()
             row = {"Model": pred_col}
 
             if "BLEU" in metrics:
-                corpus_score = corpus_bleu(hyps, [refs]).score
-                row["BLEU"] = corpus_score
-                # macro-average of sentence-level BLEU
-                row["BLEU_macro"] = self._detailed_results[f"{pred_col} BLEU"].mean()
+                row["BLEU"] = self._detailed_results[f"{pred_col} BLEU"].mean()
 
             if "ChrF" in metrics:
-                corpus_score = corpus_chrf(hyps, [refs]).score
-                row["ChrF"] = corpus_score
-                # macro-average of sentence-level ChrF
-                row["ChrF_macro"] = self._detailed_results[f"{pred_col} ChrF"].mean()
+                row["ChrF"] = self._detailed_results[f"{pred_col} ChrF"].mean()
 
             if "ChrF++" in metrics:
-                corpus_score = self._chrff.corpus_score(hyps, [refs]).score
-                row["ChrF++"] = corpus_score
-                # macro-average of sentence-level ChrF++
-                row["ChrF++_macro"] = self._detailed_results[f"{pred_col} ChrF++"].mean()
+                row["ChrF++"] = self._detailed_results[f"{pred_col} ChrF++"].mean()
 
             results.append(row)
 
@@ -167,7 +154,7 @@ class TranslationEvaluator:
             self._detailed_results.to_excel(
                 writer, sheet_name="Detailed metrics", index=False
             )
-            # model metrics sheet (with macro averages)
+            # model metrics sheet (now only macro-averages)
             self._model_metrics.to_excel(
                 writer, sheet_name="Model metrics", index=False
             )
@@ -195,5 +182,5 @@ class TranslationEvaluator:
         return self._detailed_results.copy()
 
     def get_model_metrics(self) -> pd.DataFrame:
-        """Retrieve the aggregate model metrics DataFrame"""
+        """Retrieve the macro-average metrics DataFrame"""
         return self._model_metrics.copy()
