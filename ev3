@@ -1,7 +1,7 @@
 import time
 import pandas as pd
-from sacrebleu import sentence_bleu, corpus_bleu, corpus_chrf, sentence_chrf
-from typing import Union, List, Optional, Dict
+from sacrebleu import sentence_bleu, corpus_chrf, sentence_chrf
+from typing import Union, List, Optional
 import warnings
 from pathlib import Path
 from sacrebleu.metrics import CHRF
@@ -10,8 +10,8 @@ import os
 class TranslationEvaluator:
     """
     Load data
-    BLEU, chrf, ChrF++, COMET metrics
-    summary
+    BLEU, ChrF, ChrF++ metrics
+    summary (macro-average only)
     excel report generation
     """
     def __init__(
@@ -43,15 +43,15 @@ class TranslationEvaluator:
         self,
         prediction_cols: List[str],
         reference_col: str = "en",
-        metrics: List[str] = ["BLEU", "ChrF", "ChrF++", "COMET"],
+        metrics: List[str] = ["BLEU", "ChrF", "ChrF++"],
         keep_cols: Optional[List[str]] = None
     ) -> None:
         """
         Run all requested metrics.
         - prediction_cols: list of your model-output columns
         - reference_col: the ground-truth column
-        - metrics: subset of ["BLEU","ChrF","ChrF++","COMET"]
-        - keep_cols: any other columns (e.g. IDs, source) to carry through
+        - metrics: subset of ["BLEU","ChrF","ChrF++"]
+        - keep_cols: other columns (e.g. IDs, source) to carry through
         """
         if self._data is None:
             raise ValueError("No data loaded")
@@ -62,6 +62,7 @@ class TranslationEvaluator:
 
         self._validate_columns(reference_col, prediction_cols, keep_cols)
         self._compute_detailed_metrics(reference_col, prediction_cols, metrics, keep_cols)
+        # note: pass metrics first, then prediction_cols
         self._compute_model_metrics(metrics, prediction_cols)
 
     def _validate_columns(
@@ -133,10 +134,10 @@ class TranslationEvaluator:
             row = {"Model": pred_col}
 
             if "BLEU" in metrics:
-                row["BLEU"] = self._detailed_results[f"{pred_col} BLEU"].mean()
+                row["BLEU"]  = self._detailed_results[f"{pred_col} BLEU"].mean()
 
             if "ChrF" in metrics:
-                row["ChrF"] = self._detailed_results[f"{pred_col} ChrF"].mean()
+                row["ChrF"]  = self._detailed_results[f"{pred_col} ChrF"].mean()
 
             if "ChrF++" in metrics:
                 row["ChrF++"] = self._detailed_results[f"{pred_col} ChrF++"].mean()
@@ -154,7 +155,7 @@ class TranslationEvaluator:
             self._detailed_results.to_excel(
                 writer, sheet_name="Detailed metrics", index=False
             )
-            # model metrics sheet (now only macro-averages)
+            # model metrics sheet (macro-average only)
             self._model_metrics.to_excel(
                 writer, sheet_name="Model metrics", index=False
             )
