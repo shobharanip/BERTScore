@@ -1,68 +1,63 @@
-import time
 import pandas as pd
-from sacrebleu import sentence_bleu, corpus_chrf, sentence_chrf
-from typing import Union, List, Optional
-import warnings
-from pathlib import Path
+from sacrebleu import sentence_bleu, sentence_chrf
 from sacrebleu.metrics import CHRF
-import os
+from pathlib import Path
+from typing import Union, List, Optional
+import warnings, os
 
 class TranslationEvaluator:
     """
     Load data
-    BLEU, ChrF, ChrF++ metrics
-    summary (macro-average only)
-    excel report generation
+    Compute sentence-level BLEU, ChrF, ChrF++
+    Compute macro-average model metrics
+    Write Detailed + Model metrics to Excel
     """
     def __init__(
         self,
         output_file: Union[str, Path] = "output_data.xlsx"
     ):
-        os.environ["Transformers cache"] = r'C:/Users/ZKC7H0U/Documents/4. BERT score/roberta-large'
-        warnings.simplefilter('ignore')
+        # optional: set transformers cache if you use COMET or BERTScore later
+        os.environ["TRANSFORMERS_CACHE"] = r"C:/Users/You/.cache/huggingface"
+        warnings.simplefilter("ignore")
 
-        self._data = None
-        self._detailed_results = None
-        self._model_metrics = None
-        self._output_file = Path(output_file)
-
-        # chrF++ (char + up-to-bigram word n-grams)
-        self._chrff = CHRF(word_order=2)
+        self._data            = None
+        self._detailed_results= None
+        self._model_metrics   = None
+        self._output_file     = Path(output_file)
+        # chrF++ (character n-grams + up to bigram word n-grams)
+        self._chrff           = CHRF(word_order=2)
 
     def load_data(self, file_path: Union[str, Path]) -> None:
-        """Load file (CSV or Excel) into self._data"""
-        file_path = Path(file_path)
-        if file_path.suffix == '.csv':
-            self._data = pd.read_csv(file_path)
-        elif file_path.suffix in ('.xls', '.xlsx'):
-            self._data = pd.read_excel(file_path)
+        """Load a CSV or Excel file into self._data"""
+        fp = Path(file_path)
+        if fp.suffix == ".csv":
+            self._data = pd.read_csv(fp)
+        elif fp.suffix in (".xls", ".xlsx"):
+            self._data = pd.read_excel(fp)
         else:
-            raise ValueError("unsupported file type")
+            raise ValueError(f"Unsupported file type: {fp.suffix}")
 
     def evaluate(
         self,
         prediction_cols: List[str],
         reference_col: str = "en",
-        metrics: List[str] = ["BLEU", "ChrF", "ChrF++"],
+        metrics: List[str] = ["BLEU","ChrF","ChrF++"],
         keep_cols: Optional[List[str]] = None
     ) -> None:
         """
-        Run all requested metrics.
-        - prediction_cols: list of your model-output columns
-        - reference_col: the ground-truth column
-        - metrics: subset of ["BLEU","ChrF","ChrF++"]
-        - keep_cols: other columns (e.g. IDs, source) to carry through
+        Compute:
+         - sentence-level metrics (self._detailed_results)
+         - macro-average metrics (self._model_metrics)
         """
         if self._data is None:
-            raise ValueError("No data loaded")
+            raise ValueError("No data loaded. Call load_data() first.")
 
-        keep_cols = keep_cols or []
-        if reference_col not in keep_cols:
-            keep_cols.insert(0, reference_col)
+        keep = keep_cols or []
+        if reference_col not in keep:
+            keep.insert(0, reference_col)
 
-        self._validate_columns(reference_col, prediction_cols, keep_cols)
-        self._compute_detailed_metrics(reference_col, prediction_cols, metrics, keep_cols)
-        # note: pass metrics first, then prediction_cols
+        self._validate_columns(reference_col, prediction_cols, keep)
+        self._compute_detailed_metrics(reference_col, prediction_cols, metrics, keep)
         self._compute_model_metrics(metrics, prediction_cols)
 
     def _validate_columns(
@@ -71,11 +66,12 @@ class TranslationEvaluator:
         prediction_cols: List[str],
         keep_cols: List[str]
     ) -> None:
-        """Ensure all specified columns exist in the DataFrame"""
-        all_columns = [reference_col] + prediction_cols + keep_cols
-        missing = [col for col in all_columns if col not in self._data.columns]
+        missing = [
+            c for c in [reference_col] + prediction_cols + keep_cols
+            if c not in self._data.columns
+        ]
         if missing:
-            raise ValueError(f"columns not found in data: {missing}")
+            raise ValueError(f"Columns not found in data: {missing}")
 
     def _compute_detailed_metrics(
         self,
@@ -84,104 +80,95 @@ class TranslationEvaluator:
         metrics: List[str],
         keep_cols: List[str]
     ) -> None:
-        """Compute sentence-level metrics and store in self._detailed_results"""
-        cols_to_keep = keep_cols.copy()
-        if reference_col not in cols_to_keep:
-            cols_to_keep.insert(0, reference_col)
-
+        """Attach per-sentence BLEU, ChrF, ChrF++ into self._detailed_results."""
         df = self._data.copy()
-        for pred_col in prediction_cols:
+        for p in prediction_cols:
             if "BLEU" in metrics:
-                df[f"{pred_col} BLEU"] = df.apply(
-                    lambda row: sentence_bleu(row[pred_col], [row[reference_col]]).score,
+                df[f"{p} BLEU"] = df.apply(
+                    lambda r: sentence_bleu(r[p], [r[reference_col]]).score,
                     axis=1
                 )
             if "ChrF" in metrics:
-                df[f"{pred_col} ChrF"] = df.apply(
-                    lambda row: sentence_chrf(row[pred_col], [row[reference_col]]).score,
+                df[f"{p} ChrF"] = df.apply(
+                    lambda r: sentence_chrf(r[p], [r[reference_col]]).score,
                     axis=1
                 )
             if "ChrF++" in metrics:
-                df[f"{pred_col} ChrF++"] = df.apply(
-                    lambda row: self._chrff.sentence_score(row[pred_col], [row[reference_col]]).score,
+                df[f"{p} ChrF++"] = df.apply(
+                    lambda r: self._chrff.sentence_score(r[p], [r[reference_col]]).score,
                     axis=1
                 )
 
-        # Reorder columns: keep_cols | prediction | metrics...
-        new_cols = cols_to_keep.copy()
-        for pred_col in prediction_cols:
-            new_cols.append(pred_col)
-            if "BLEU" in metrics:
-                new_cols.append(f"{pred_col} BLEU")
-            if "ChrF" in metrics:
-                new_cols.append(f"{pred_col} ChrF")
-            if "ChrF++" in metrics:
-                new_cols.append(f"{pred_col} ChrF++")
+        # reorder: keep_cols | each pred col + its metrics
+        cols = keep_cols.copy()
+        for p in prediction_cols:
+            cols.append(p)
+            for m in ["BLEU","ChrF","ChrF++"]:
+                if m in metrics:
+                    cols.append(f"{p} {m}")
 
-        self._detailed_results = df[new_cols]
+        self._detailed_results = df[cols]
 
     def _compute_model_metrics(
         self,
         metrics: List[str],
         prediction_cols: List[str]
     ) -> None:
+        """Compute macro-average of each sentence-level metric."""
+        rows = []
+        for p in prediction_cols:
+            row = {"Model": p}
+            for m in ["BLEU","ChrF","ChrF++"]:
+                if m in metrics:
+                    col_name = f"{p} {m}"
+                    row[m] = self._detailed_results[col_name].mean()
+            rows.append(row)
+
+        self._model_metrics = pd.DataFrame(rows)
+
+    def generate_report(self) -> None:
         """
-        Compute macro-average scores for each prediction column,
-        storing results in self._model_metrics.
+        Write two sheets to Excel:
+         - Detailed metrics
+         - Model metrics (macro-average only)
+        Prints out the full path so you know where it saved.
         """
-        results = []
-        for pred_col in prediction_cols:
-            row = {"Model": pred_col}
+        # ensure directory exists
+        self._output_file.parent.mkdir(parents=True, exist_ok=True)
 
-            if "BLEU" in metrics:
-                row["BLEU"]  = self._detailed_results[f"{pred_col} BLEU"].mean()
-
-            if "ChrF" in metrics:
-                row["ChrF"]  = self._detailed_results[f"{pred_col} ChrF"].mean()
-
-            if "ChrF++" in metrics:
-                row["ChrF++"] = self._detailed_results[f"{pred_col} ChrF++"].mean()
-
-            results.append(row)
-
-        self._model_metrics = pd.DataFrame(results)
-
-    def _generate_report(self) -> None:
-        """Write both detailed and model metrics to an Excel file"""
-        out = self._output_file
-        out.parent.mkdir(parents=True, exist_ok=True)
-        with pd.ExcelWriter(out, engine='xlsxwriter') as writer:
-            # detailed metrics sheet
+        with pd.ExcelWriter(self._output_file, engine="xlsxwriter") as writer:
+            # 1) detailed
             self._detailed_results.to_excel(
                 writer, sheet_name="Detailed metrics", index=False
             )
-            # model metrics sheet (macro-average only)
+            # 2) macro-avg summary
             self._model_metrics.to_excel(
                 writer, sheet_name="Model metrics", index=False
             )
 
+            # Optional: format the Model metrics sheet as a table
             wb = writer.book
             ws = writer.sheets["Model metrics"]
             max_row, max_col = self._model_metrics.shape
-            cols = [{'header': c} for c in self._model_metrics.columns]
+            headers = [{"header": c} for c in self._model_metrics.columns]
             ws.add_table(0, 0, max_row, max_col - 1, {
-                'column': cols,
-                'style': 'Table Style Medium 9',
-                'name':  'ModelMetrics'
+                "column": headers,
+                "style": "Table Style Medium 9",
+                "name": "ModelMetrics"
             })
-            for i, col in enumerate(self._model_metrics.columns):
+            for idx, col in enumerate(self._model_metrics.columns):
                 width = max(
                     self._model_metrics[col].astype(str).map(len).max(),
                     len(col)
                 ) + 2
-                ws.set_column(i, i, width)
+                ws.set_column(idx, idx, width)
 
-        print(f"Report saved to {out.resolve()}")
+        print(f"Report saved to: {self._output_file.resolve()}")
 
     def get_detailed_results(self) -> pd.DataFrame:
-        """Retrieve the per-sentence metrics DataFrame"""
+        """Return the per-sentence metrics."""
         return self._detailed_results.copy()
 
     def get_model_metrics(self) -> pd.DataFrame:
-        """Retrieve the macro-average metrics DataFrame"""
+        """Return the macro-average summary."""
         return self._model_metrics.copy()
