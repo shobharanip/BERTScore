@@ -1,3 +1,16 @@
+mv FineTuning_translation_app.py translation_app.py
+
+python translation_app.py
+
+uvicorn translation_app:app --host 0.0.0.0 --port 8002 --reload
+
+curl -X GET http://127.0.0.1:8002/
+
+curl -X POST http://127.0.0.1:8002/translate/ \
+     -H "Content-Type: application/json" \
+     -d '{"spanish":"¿Puedo obtener mi puntuación de crédito de hace seis meses?"}'
+
+
 
 curl -X POST http://127.0.0.1:8002/translate/ \
      -H "Content-Type: application/json" \
