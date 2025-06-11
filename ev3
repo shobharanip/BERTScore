@@ -1,4 +1,4 @@
-limport pandas as pd
+import pandas as pd
 from sacrebleu import sentence_bleu, sentence_chrf
 from sacrebleu.metrics import CHRF
 from pathlib import Path
