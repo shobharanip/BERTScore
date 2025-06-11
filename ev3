@@ -1,10 +1,10 @@
-import pandas as pd
-from pandas.api import types as ptypes
+limport pandas as pd
 from sacrebleu import sentence_bleu, sentence_chrf
 from sacrebleu.metrics import CHRF
 from pathlib import Path
 from typing import Union, List, Optional
-import warnings, os
+import warnings
+import os
 
 class TranslationEvaluator:
     """
@@ -13,10 +13,12 @@ class TranslationEvaluator:
     Compute macro-average model metrics
     Write Detailed + Model metrics to Excel
     """
+
     def __init__(
         self,
         output_file: Union[str, Path] = "output_data.xlsx"
     ):
+        # optional: cache for any future metrics (e.g. COMET, BERTScore)
         os.environ["TRANSFORMERS_CACHE"] = r"C:/Users/You/.cache/huggingface"
         warnings.simplefilter("ignore")
 
@@ -24,6 +26,7 @@ class TranslationEvaluator:
         self._detailed_results = None
         self._model_metrics    = None
         self._output_file      = Path(output_file)
+        # chrF++ (character n-grams + up to bigram word n-grams)
         self._chrff            = CHRF(word_order=2)
 
     def load_data(self, file_path: Union[str, Path]) -> None:
@@ -40,14 +43,14 @@ class TranslationEvaluator:
         self,
         prediction_cols: Optional[List[str]] = None,
         reference_col: str = "en",
-        metrics: List[str] = ["BLEU","ChrF","ChrF++"],
+        metrics: List[str] = ["BLEU", "ChrF", "ChrF++"],
         keep_cols: Optional[List[str]] = None
     ) -> None:
         """
         Compute sentence-level metrics and macro-average summary.
 
         - prediction_cols: list of your model-output columns;
-          if None, auto-select all string columns except 'es' and reference_col.
+          if None, auto-select all columns except 'es' and reference_col.
         - reference_col: ground-truth column (default 'en')
         - metrics: subset of ["BLEU","ChrF","ChrF++"]
         - keep_cols: extra columns to carry into the detailed sheet
@@ -55,31 +58,28 @@ class TranslationEvaluator:
         if self._data is None:
             raise ValueError("No data loaded. Call load_data() first.")
 
-        # -- auto-detect predictions if none provided --
+        # 1) Auto-detect predictions if not provided
         if prediction_cols is None:
             exclude = {reference_col, "es"}
-            # only object (string) dtypes
             prediction_cols = [
                 col for col in self._data.columns
-                if ptypes.is_object_dtype(self._data[col]) and col not in exclude
+                if col not in exclude
             ]
             if not prediction_cols:
-                raise ValueError(
-                    f"No string columns available for predictions "
-                    f"(excluding {exclude})."
-                )
+                raise ValueError(f"No columns available for predictions (excluding {exclude}).")
 
-        # cast predictions + reference to str to avoid type errors
+        # 2) Cast prediction and reference columns to str to avoid type errors
         for c in prediction_cols + [reference_col]:
             if c not in self._data.columns:
                 raise ValueError(f"Column '{c}' not found in data.")
             self._data[c] = self._data[c].astype(str)
 
-        # prepare keep_cols and ensure reference appears first
+        # 3) Prepare keep_cols (ensure reference appears first)
         keep = keep_cols.copy() if keep_cols else []
         if reference_col not in keep:
             keep.insert(0, reference_col)
 
+        # 4) Validate and compute
         self._validate_columns(reference_col, prediction_cols, keep)
         self._compute_detailed_metrics(reference_col, prediction_cols, metrics, keep)
         self._compute_model_metrics(metrics, prediction_cols)
@@ -123,11 +123,11 @@ class TranslationEvaluator:
                     axis=1
                 )
 
-        # reorder: keep_cols | each pred + its metrics
+        # Reorder columns: keep_cols | each pred + its metrics
         cols = keep_cols.copy()
         for p in prediction_cols:
             cols.append(p)
-            for m in ["BLEU","ChrF","ChrF++"]:
+            for m in ["BLEU", "ChrF", "ChrF++"]:
                 if m in metrics:
                     cols.append(f"{p} {m}")
 
@@ -142,11 +142,12 @@ class TranslationEvaluator:
         rows = []
         for p in prediction_cols:
             row = {"Model": p}
-            for m in ["BLEU","ChrF","ChrF++"]:
+            for m in ["BLEU", "ChrF", "ChrF++"]:
                 if m in metrics:
                     col_name = f"{p} {m}"
                     row[m] = self._detailed_results[col_name].mean()
             rows.append(row)
+
         self._model_metrics = pd.DataFrame(rows)
 
     def generate_report(self) -> None:
@@ -157,15 +158,18 @@ class TranslationEvaluator:
         Prints the exact path so you know where it saved.
         """
         self._output_file.parent.mkdir(parents=True, exist_ok=True)
+
         with pd.ExcelWriter(self._output_file, engine="xlsxwriter") as writer:
+            # 1) detailed per-sentence
             self._detailed_results.to_excel(
                 writer, sheet_name="Detailed metrics", index=False
             )
+            # 2) macro-average summary
             self._model_metrics.to_excel(
                 writer, sheet_name="Model metrics", index=False
             )
 
-            # format Model metrics sheet
+            # format Model metrics sheet as a table
             wb = writer.book
             ws = writer.sheets["Model metrics"]
             max_row, max_col = self._model_metrics.shape
@@ -173,7 +177,7 @@ class TranslationEvaluator:
             ws.add_table(0, 0, max_row, max_col - 1, {
                 "column": headers,
                 "style": "Table Style Medium 9",
-                "name": "ModelMetrics"
+                "name":  "ModelMetrics"
             })
             for idx, col in enumerate(self._model_metrics.columns):
                 width = max(
@@ -185,7 +189,9 @@ class TranslationEvaluator:
         print(f"Report saved to: {self._output_file.resolve()}")
 
     def get_detailed_results(self) -> pd.DataFrame:
+        """Return the per-sentence metrics DataFrame."""
         return self._detailed_results.copy()
 
     def get_model_metrics(self) -> pd.DataFrame:
+        """Return the macro-average summary DataFrame."""
         return self._model_metrics.copy()
