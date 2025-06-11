@@ -1,3 +1,117 @@
+import os
+Gives us access to environment variables and file‐system operations.
+	2.	import torch
+The core PyTorch library, used here to check GPU availability and (optionally) move tensors/models onto the GPU.
+	3.	import traceback
+Allows capturing full Python stack traces on errors for debugging (logged or returned).
+	4.	from fastapi import FastAPI, HTTPException
+	•	FastAPI is the web framework we use to declare routes and serve HTTP requests.
+	•	HTTPException lets us raise clean HTTP error responses (e.g. 400 or 500).
+	5.	from pydantic import BaseModel
+FastAPI uses Pydantic models to validate incoming JSON requests and outgoing JSON responses.
+	6.	from transformers import T5ForConditionalGeneration, T5Tokenizer
+Hugging Face’s classes for loading a T5‐style sequence‐to‐sequence model (for translation) and its corresponding tokenizer.
+
+⸻
+
+2. Device Selection and Model Paths
+
+1.	os.environ["CUDA_VISIBLE_DEVICES"] = "3"
+Restricts PyTorch/Transformers to see exactly GPU #3. Useful when multiple GPUs exist and you want to pin your translation service to one.
+	2.	LORA_ADAPTER_PATH = os.getenv(…)
+Reads an optional environment variable LORA_PATH; if not provided, falls back to the hard-coded path where your merged LoRA+T5 model lives. This makes the code portable (you can override paths in production without editing code).
+
+⸻
+
+3. Loading the Tokenizer and Base Model
+
+1.	T5Tokenizer.from_pretrained(...)
+Loads the vocabulary and tokenization rules from your local model folder.
+	2.	T5ForConditionalGeneration.from_pretrained(...)
+Instantiates the model weights and configuration from the same folder. Because you’ve merged your LoRA adapter into that directory, this call gives you the fully fine-tuned T5.
+	3.	.eval()
+Switches the model into inference mode (disables dropout, etc.).
+	4.	Error handling
+If anything goes wrong (missing files, corruption), the except block raises a clear RuntimeError so you don’t end up with a partially initialized service.
+
+⸻
+
+4. FastAPI App & Data Schemas
+
+
+1.	app = FastAPI(...)
+Creates the web server instance, setting metadata (title, description, version) that will appear in the auto-generated OpenAPI docs (/docs).
+	2.	TranslateRequest
+A Pydantic model defining the shape of the incoming JSON. It must have one field, spanish, which is a string. FastAPI will automatically reject any requests that don’t match this schema with a 422 error.
+	3.	TranslateResponse
+Defines the JSON shape of successful responses: one field, english, a string.
+
+⸻
+
+5. Health-Check Endpoint
+
+Purpose: Quick way for monitoring systems or load balancers to verify that the model is loaded and the server is alive.
+	•	Returns: JSON indicating "healthy" vs. "failed", which GPU it’s (supposedly) using, and which adapter path it loaded.
+
+
+1.	@app.post("/translate/")
+Declares a POST route at /translate/, with automatic documentation and validation.
+	2.	Input validation
+Strips whitespace and ensures the string isn’t empty—otherwise returns a 400.
+	3.	Prompt construction
+	•	prompt = "translate Spanish to English: " matches the instruction prefix you used during fine-tuning.
+	•	Optionally, text_prefix = "<2en> " injects a special token if your training data required it.
+	4.	Tokenization
+Converts the prompt+s input text to token IDs in a PyTorch tensor, truncated to the model’s max length.
+	5.	.generate(...)
+Runs autoregressive decoding to produce the English translation. You can customize beam size, max length, etc., here.
+	6.	Decoding
+Converts the output token IDs back into a human-readable string, removing any special tokens.
+	7.	Error handling
+Any unexpected exception during tokenization or generation returns a 500 with the exception message.
+
+
+if __name__ == "__main__": ensures this block only executes when you run python translation_app.py directly, not when importing it.
+	•	uvicorn.run(...)
+	•	"translation_app:app" points Uvicorn at the app instance in this file.
+	•	host="0.0.0.0" makes the server listen on all network interfaces (so it’s reachable from outside Docker or your lab environment).
+	•	port=8100 sets the HTTP port.
+	•	reload=True enables automatic reloading whenever you save changes—great for development, but you’d disable this in production to save memory.
+
+⸻
+
+Uses & Benefits of This Translation API
+	1.	Decoupled Microservice
+You’ve wrapped your Spanish→English translation model in a standalone HTTP service. Any application (web, mobile, backend pipeline) can call a simple JSON POST and get back a translation—no deep ML framework knowledge required.
+	2.	Scalability & Deployment
+	•	Containerizable: You can package this in Docker, deploy on Kubernetes, AWS ECS, etc.
+	•	GPU-backed: The model runs on GPU #3 (or whichever you choose) to ensure low-latency inference.
+	3.	Self-Documenting
+FastAPI automatically generates interactive docs (OpenAPI/Swagger) at /docs, letting developers explore and test without separate documentation.
+	4.	Robust Validation & Error-Handling
+	•	Pydantic ensures incoming requests have the correct shape, returning clear 422 errors if not.
+	•	HTTPException gives clean status codes (400 for bad input, 500 for unexpected failures).
+	•	Stack traces via traceback can be logged for debugging.
+	5.	Customizable Inference
+You can tune decoding parameters (num_beams, max_length, early_stopping) to trade off speed vs. translation quality, directly in the code.
+	6.	Health-Check for Orchestration
+The simple GET / endpoint lets monitoring systems or load balancers verify the model is up and loaded, enabling robust production deployments.
+	7.	Reusability
+By abstracting away tokenization, device placement, and generation, you hide all that complexity behind a clean JSON interface, making it easy for non-ML engineers to integrate translation into larger workflows (e.g., chatbots, content pipelines, reporting tools).
+
+⸻
+
+This end-to-end service demonstrates best practices for serving an ML model:
+	•	Clear separation of model loading, API definition, and execution logic.
+	•	Robust input/output schemas for safety.
+	•	GPU optimization (via CUDA_VISIBLE_DEVICES and .to(device)).
+	•	Developer friendliness through auto-reload, docs, and structured error messages.
+
+All together, it’s a production-ready, maintainable translation endpoint you can plug into any system that needs Spanish→English translation.
+
+
+
+
 mv FineTuning_translation_app.py translation_app.py
 
 python translation_app.py
