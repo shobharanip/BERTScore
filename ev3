@@ -1,24 +1,25 @@
 import pandas as pd
 from sacrebleu import sentence_bleu, sentence_chrf
 from sacrebleu.metrics import CHRF
+import evaluate
 from pathlib import Path
 from typing import Union, List, Optional
-import warnings
-import os
+import warnings, os
 
 class TranslationEvaluator:
     """
     Load data
-    Compute sentence-level BLEU, ChrF, ChrF++
+    Compute sentence-level BLEU, ChrF, ChrF++, BERTScore
     Compute macro-average model metrics
     Write Detailed + Model metrics to Excel
     """
 
     def __init__(
         self,
-        output_file: Union[str, Path] = "output_data.xlsx"
+        output_file: Union[str, Path] = "output_data.xlsx",
+        bert_lang: str = "en"
     ):
-        # optional: cache for any future metrics (e.g. COMET, BERTScore)
+        # optional cache for other metrics (COMET, BERTScore)
         os.environ["TRANSFORMERS_CACHE"] = r"C:/Users/You/.cache/huggingface"
         warnings.simplefilter("ignore")
 
@@ -26,8 +27,12 @@ class TranslationEvaluator:
         self._detailed_results = None
         self._model_metrics    = None
         self._output_file      = Path(output_file)
-        # chrF++ (character n-grams + up to bigram word n-grams)
+
+        # chrF++ (char-ngrams + up-to-bigram word-ngrams)
         self._chrff            = CHRF(word_order=2)
+        # load BERTScore metric (defaults to F1, under the hood uses a Roberta model)
+        self._bertscorer       = evaluate.load("bertscore")
+        self._bert_lang        = bert_lang
 
     def load_data(self, file_path: Union[str, Path]) -> None:
         """Load a CSV or Excel file into self._data."""
@@ -43,7 +48,7 @@ class TranslationEvaluator:
         self,
         prediction_cols: Optional[List[str]] = None,
         reference_col: str = "en",
-        metrics: List[str] = ["BLEU", "ChrF", "ChrF++"],
+        metrics: List[str] = ["BLEU", "ChrF", "ChrF++", "BERTScore"],
         keep_cols: Optional[List[str]] = None
     ) -> None:
         """
@@ -52,34 +57,31 @@ class TranslationEvaluator:
         - prediction_cols: list of your model-output columns;
           if None, auto-select all columns except 'es' and reference_col.
         - reference_col: ground-truth column (default 'en')
-        - metrics: subset of ["BLEU","ChrF","ChrF++"]
+        - metrics: subset of ["BLEU","ChrF","ChrF++","BERTScore"]
         - keep_cols: extra columns to carry into the detailed sheet
         """
         if self._data is None:
             raise ValueError("No data loaded. Call load_data() first.")
 
-        # 1) Auto-detect predictions if not provided
+        # 1) Auto-detect predictions if none provided
         if prediction_cols is None:
             exclude = {reference_col, "es"}
-            prediction_cols = [
-                col for col in self._data.columns
-                if col not in exclude
-            ]
+            prediction_cols = [c for c in self._data.columns if c not in exclude]
             if not prediction_cols:
                 raise ValueError(f"No columns available for predictions (excluding {exclude}).")
 
-        # 2) Cast prediction and reference columns to str to avoid type errors
+        # 2) Cast prediction & reference columns to str
         for c in prediction_cols + [reference_col]:
             if c not in self._data.columns:
                 raise ValueError(f"Column '{c}' not found in data.")
             self._data[c] = self._data[c].astype(str)
 
-        # 3) Prepare keep_cols (ensure reference appears first)
+        # 3) Prepare keep_cols (ensure reference first)
         keep = keep_cols.copy() if keep_cols else []
         if reference_col not in keep:
             keep.insert(0, reference_col)
 
-        # 4) Validate and compute
+        # 4) Validate & compute
         self._validate_columns(reference_col, prediction_cols, keep)
         self._compute_detailed_metrics(reference_col, prediction_cols, metrics, keep)
         self._compute_model_metrics(metrics, prediction_cols)
@@ -90,10 +92,8 @@ class TranslationEvaluator:
         prediction_cols: List[str],
         keep_cols: List[str]
     ) -> None:
-        missing = [
-            c for c in [reference_col] + prediction_cols + keep_cols
-            if c not in self._data.columns
-        ]
+        missing = [c for c in [reference_col] + prediction_cols + keep_cols
+                   if c not in self._data.columns]
         if missing:
             raise ValueError(f"Columns not found in data: {missing}")
 
@@ -104,30 +104,50 @@ class TranslationEvaluator:
         metrics: List[str],
         keep_cols: List[str]
     ) -> None:
-        """Attach per-sentence BLEU, ChrF, ChrF++ into self._detailed_results."""
+        """Attach per-sentence BLEU, ChrF, ChrF++, BERTScore into self._detailed_results."""
         df = self._data.copy()
+
+        # Precompute any corpus-level needs for BERTScore references:
+        # we need a list-of-lists like [[ref1],[ref2],…]
+        refs_list = [[r] for r in df[reference_col].tolist()]
+
         for p in prediction_cols:
+            hyps = df[p].tolist()
+
             if "BLEU" in metrics:
                 df[f"{p} BLEU"] = df.apply(
-                    lambda r: sentence_bleu(r[p], [r[reference_col]]).score,
-                    axis=1
-                )
-            if "ChrF" in metrics:
-                df[f"{p} ChrF"] = df.apply(
-                    lambda r: sentence_chrf(r[p], [r[reference_col]]).score,
-                    axis=1
-                )
-            if "ChrF++" in metrics:
-                df[f"{p} ChrF++"] = df.apply(
-                    lambda r: self._chrff.sentence_score(r[p], [r[reference_col]]).score,
+                    lambda row: sentence_bleu(row[p], [row[reference_col]]).score,
                     axis=1
                 )
 
-        # Reorder columns: keep_cols | each pred + its metrics
-        cols = keep_cols.copy()
+            if "ChrF" in metrics:
+                df[f"{p} ChrF"] = df.apply(
+                    lambda row: sentence_chrf(row[p], [row[reference_col]]).score,
+                    axis=1
+                )
+
+            if "ChrF++" in metrics:
+                df[f"{p} ChrF++"] = df.apply(
+                    lambda row: self._chrff.sentence_score(
+                        row[p], [row[reference_col]]
+                    ).score,
+                    axis=1
+                )
+
+            if "BERTScore" in metrics:
+                out = self._bertscorer.compute(
+                    predictions=hyps,
+                    references=refs_list,
+                    lang=self._bert_lang
+                )
+                # out["f1"] is a list of floats, one per sentence
+                df[f"{p} BERTScore"] = out["f1"]
+
+        # Reorder: keep_cols | each pred + its metrics
+        cols = keep.copy()
         for p in prediction_cols:
             cols.append(p)
-            for m in ["BLEU", "ChrF", "ChrF++"]:
+            for m in ["BLEU", "ChrF", "ChrF++", "BERTScore"]:
                 if m in metrics:
                     cols.append(f"{p} {m}")
 
@@ -142,7 +162,7 @@ class TranslationEvaluator:
         rows = []
         for p in prediction_cols:
             row = {"Model": p}
-            for m in ["BLEU", "ChrF", "ChrF++"]:
+            for m in ["BLEU", "ChrF", "ChrF++", "BERTScore"]:
                 if m in metrics:
                     col_name = f"{p} {m}"
                     row[m] = self._detailed_results[col_name].mean()
@@ -169,7 +189,7 @@ class TranslationEvaluator:
                 writer, sheet_name="Model metrics", index=False
             )
 
-            # format Model metrics sheet as a table
+            # Optional: format the Model metrics sheet as a table
             wb = writer.book
             ws = writer.sheets["Model metrics"]
             max_row, max_col = self._model_metrics.shape
